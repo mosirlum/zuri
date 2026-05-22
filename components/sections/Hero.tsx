@@ -27,13 +27,13 @@ export default function Hero() {
   return (
     <section
       id="hero"
-      className="relative min-h-screen flex items-end bg-ink overflow-hidden"
+      className="relative min-h-screen flex items-start bg-ink overflow-hidden py-10"
     >
       {/* === CAR IMAGE (right side) === */}
       <img
         src={HERO_IMAGE_PATH}
         alt="Premium car hire vehicle"
-        className="absolute right-0 inset-y-0 w-[62%] h-full object-cover object-left"
+        className="absolute right-0 inset-0 w-full h-full object-cover object-center md:w-[62%] md:object-left"
       />
 
       {/* === OVERLAY GRADIENT (heavy left, fade right) === */}
@@ -44,7 +44,7 @@ export default function Hero() {
         variants={containerVariants}
         initial="hidden"
         animate="show"
-        className="relative z-10 px-14 pb-14 max-w-[min(680px,40vw)]"
+        className="relative z-10 px-6 pb-14 max-w-[min(680px,85vw)] sm:px-10 md:px-14 md:max-w-[min(680px,40vw)]"
       >
         {/* Eyebrow */}
         <motion.div variants={itemVariants} className="mb-8">
@@ -88,12 +88,12 @@ export default function Hero() {
         {/* Stats */}
         <motion.div
           variants={itemVariants}
-          className="grid grid-cols-4 border-t border-gold/15 pt-8"
+          className="grid grid-cols-2 gap-x-6 gap-y-6 border-t border-gold/15 pt-8 sm:grid-cols-4"
         >
           {hero.stats.map((stat, index) => (
             <div
               key={stat.label}
-              className={`border-r border-gold/15 ${index === hero.stats.length - 1 ? "border-r-0" : ""} pr-6`}
+              className={`sm:border-r border-gold/15 ${index === hero.stats.length - 1 ? "sm:border-r-0" : ""} pr-6`}
             >
               <div className="font-display text-[36px] text-gold leading-none mb-3 font-light">
                 <Counter
