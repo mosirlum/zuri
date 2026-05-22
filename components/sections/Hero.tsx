@@ -27,24 +27,24 @@ export default function Hero() {
   return (
     <section
       id="hero"
-      className="relative min-h-screen flex items-start bg-ink overflow-hidden py-10"
+      className="relative min-h-screen flex items-center bg-ink overflow-hidden"
     >
-      {/* === CAR IMAGE (right side) === */}
+      {/* === BACKGROUND IMAGE (full-bleed) === */}
       <img
         src={HERO_IMAGE_PATH}
         alt="Premium car hire vehicle"
-        className="absolute right-0 inset-0 w-full h-full object-cover object-center md:w-[62%] md:object-left"
+        className="absolute inset-0 w-full h-full object-cover object-center"
       />
 
       {/* === OVERLAY GRADIENT (heavy left, fade right) === */}
       <div className="absolute inset-0 bg-gradient-to-r from-ink/95 via-ink/75 to-transparent" />
 
-      {/* === CONTENT (left side) === */}
+      {/* === CONTENT (overlay on top of image) === */}
       <motion.div
         variants={containerVariants}
         initial="hidden"
         animate="show"
-        className="relative z-10 px-6 pb-14 max-w-[min(680px,85vw)] sm:px-10 md:px-14 md:max-w-[min(680px,40vw)]"
+        className="relative z-10 px-6 py-12 max-w-[min(640px,85vw)] sm:px-10 md:px-14"
       >
         {/* Eyebrow */}
         <motion.div variants={itemVariants} className="mb-8">
@@ -56,7 +56,7 @@ export default function Hero() {
         {/* Headline */}
         <motion.h1
           variants={itemVariants}
-          className="font-display text-[clamp(44px,4.8vw,76px)] font-light leading-[0.93] text-paper mb-8 [&_em.highlight]:font-semibold"
+          className="font-display text-[clamp(28px,5.6vw,56px)] font-light leading-[1.02] text-paper mb-6 [&_em.highlight]:font-semibold"
         >
           <Highlight text={hero.headline} />
         </motion.h1>
@@ -64,7 +64,7 @@ export default function Hero() {
         {/* Description */}
         <motion.p
           variants={itemVariants}
-          className="text-[13px] text-paper/75 max-w-md mb-10 leading-relaxed"
+          className="text-[14px] text-paper/75 max-w-prose mb-8 leading-relaxed"
         >
           {hero.subline}
         </motion.p>
