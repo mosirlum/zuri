@@ -160,7 +160,7 @@ export const fleet = {
       badge: "Group",
       tag: "Group · Events",
       name: "Toyota *Coaster*",
-      specs: "26 seats · A/C · Cargo",
+      specs: "26 seats · A/C",
       image: "/images/toyota-coaster.jpeg",
       size: "tall", // tall portrait card
     },
@@ -178,7 +178,7 @@ export const fleet = {
       badge: "Mid-Group",
       tag: "Mid-group",
       name: "Toyota *Hiace*",
-      specs: "14 seats · A/C · Luggage",
+      specs: "14 seats · A/C",
       image: "/images/toyota-hiace.jpg",
       size: "small",
     },
