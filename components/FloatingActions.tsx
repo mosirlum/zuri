@@ -10,7 +10,7 @@ export default function FloatingActions() {
       initial={{ opacity: 0, scale: 0.8 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ delay: 2, duration: 0.5, type: "spring" }}
-      className="fixed bottom-6 right-6 z-40 flex flex-col gap-3"
+      className="fixed bottom-6 right-6 z-40 flex flex-col gap-3 items-end"
     >
       {/* Call */}
       <a

@@ -30,10 +30,10 @@ export default function About() {
             initial={{ opacity: 0, x: -30 }}
             animate={inView ? { opacity: 1, x: 0 } : {}}
             transition={{ duration: 0.8 }}
-            className="relative aspect-[4/3]"
+            className="relative aspect-[4/3] ml-4 lg:ml-0"
           >
-            {/* Offset gold border behind */}
-            <div className="absolute inset-0 border border-gold translate-x-[-15px] translate-y-[15px] -z-10" />
+            {/* Offset gold border behind — hidden on very small screens to avoid clipping */}
+            <div className="hidden sm:block absolute inset-0 border border-gold translate-x-[-15px] translate-y-[15px] -z-10" />
 
             <div className="w-full h-full overflow-hidden">
               {/* eslint-disable-next-line @next/next/no-img-element */}
