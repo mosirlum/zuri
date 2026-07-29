@@ -1,4 +1,5 @@
 import { company, footerLinks } from "@/lib/data";
+import { Lock } from "lucide-react";
 
 export default function Footer() {
   const year = new Date().getFullYear();
@@ -8,7 +9,7 @@ export default function Footer() {
       <div className="max-w-7xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1.3fr] gap-10 pb-12 border-b border-ink/10">
         {/* Brand */}
         <div>
-          {/* Logo — image already contains the wordmark */}
+          {/* Logo - image already contains the wordmark */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/images/zuri-logo.png"
@@ -18,7 +19,6 @@ export default function Footer() {
           <p className="text-muted text-sm leading-relaxed max-w-sm font-light">
             {company.description}
           </p>
-          {/* Footer credit removed as requested */}
         </div>
 
         {/* Services */}
@@ -90,10 +90,19 @@ export default function Footer() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto mt-6 flex flex-wrap justify-between gap-4 text-[0.72rem] tracking-[0.15em] uppercase text-muted">
-        <div>© {year} — Zuri Tours &amp; Car Hire Ltd</div>
+      <div className="max-w-7xl mx-auto mt-6 flex flex-wrap items-center justify-between gap-y-4 gap-x-6 text-[0.72rem] tracking-[0.15em] uppercase text-muted">
+        <div className="flex items-center gap-5 flex-wrap">
+          <span>&copy; {year} &mdash; Zuri Tours &amp; Car Hire Ltd</span>
+          <a
+            href="/login"
+            className="inline-flex items-center gap-2 rounded-full bg-gold px-5 py-2.5 text-[0.68rem] font-semibold tracking-[0.18em] text-ink transition-all duration-300 hover:bg-gold/90 hover:shadow-md"
+          >
+            <Lock className="w-3.5 h-3.5" />
+            Staff Login
+          </a>
+        </div>
         <div className="font-display italic text-base text-gold normal-case tracking-normal">
-          Karibu sana — Asante kwa kutembelea.
+          Karibu sana &mdash; Asante kwa kutembelea.
         </div>
       </div>
     </footer>
