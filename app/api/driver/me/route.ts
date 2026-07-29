@@ -6,11 +6,10 @@ const sql = neon(process.env.DATABASE_URL!);
 
 export async function GET() {
   const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const userId = (session?.user as any)?.id;
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const userId = session.user.id;
-
     const drivers = await sql`
       SELECT * FROM drivers WHERE user_id = ${userId} LIMIT 1
     `;
@@ -47,13 +46,12 @@ export async function GET() {
 // status, uniform compliance, or anyone else's record.
 export async function PUT(req: NextRequest) {
   const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const userId = (session?.user as any)?.id;
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const userId = session.user.id;
     const body = await req.json();
 
-    // Confirm the caller actually owns a driver record before touching anything
     const drivers = await sql`SELECT id FROM drivers WHERE user_id = ${userId} LIMIT 1`;
     const driver = drivers[0];
     if (!driver) return NextResponse.json({ error: "No driver record found" }, { status: 404 });

@@ -7,7 +7,8 @@ const sql = neon(process.env.DATABASE_URL!);
 
 export async function PUT(req: NextRequest) {
   const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const userId = (session?.user as any)?.id;
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
     const body = await req.json();
@@ -20,7 +21,6 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "New password is too short" }, { status: 400 });
     }
 
-    const userId = session.user.id;
     const rows = await sql`SELECT password FROM users WHERE id = ${userId} LIMIT 1`;
     const user = rows[0];
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
