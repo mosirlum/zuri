@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { Cormorant_Garamond, Manrope } from "next/font/google";
 import "./globals.css";
+import Providers from "./providers";
 import { seo, company } from "@/lib/data";
-import WhatsappButton from "@/components/WhatsappButton";
 
 const display = Cormorant_Garamond({
   subsets: ["latin"],
@@ -33,15 +33,7 @@ export const metadata: Metadata = {
     locale: "en_TZ",
     type: "website",
   },
-  twitter: {
-    card: "summary_large_image",
-    title: seo.title,
-    description: seo.description,
-  },
   robots: { index: true, follow: true },
-  verification: {
-    google: "rG1KoBKA6Pfy4fBxVJq-VJy6G3jEJhaUX12c93qAAto",
-  },
 };
 
 export default function RootLayout({
@@ -52,8 +44,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${display.variable} ${sans.variable}`}>
       <body className="font-sans">
-        {children}
-        <WhatsappButton />
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

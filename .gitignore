@@ -7,3 +7,17 @@ out
 .vercel
 *.tsbuildinfo
 next-env.d.ts
+
+# Environment files — never commit these
+.env
+.env.local
+.env*.local
+.env.local.txt
+*.env.txt
+
+# Scratch / leftover files
+middleware.ts.txt
+middleware.txt
+zuri-neon/
+app/test/
+lib/supabase/
