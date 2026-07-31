@@ -21,7 +21,6 @@ export async function GET(req: NextRequest) {
   const customStart = searchParams.get("start");
   const customEnd = searchParams.get("end");
 
-  // Calculate date range
   let startDate: string;
   let endDate: string;
 
@@ -53,27 +52,37 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Get bookings with revenue
     const bookings = await sql`
-      SELECT b.*, c.full_name as customer_name,
-        v.make as vehicle_make, v.model as vehicle_model,
-        d.full_name as driver_name
+      SELECT b.*, c.full_name as customer_name
       FROM bookings b
       LEFT JOIN customers c ON b.customer_id = c.id
-      LEFT JOIN vehicles v ON b.vehicle_id = v.id
-      LEFT JOIN drivers d ON b.driver_id = d.id
       WHERE b.pickup_datetime::date BETWEEN ${startDate}::date AND ${endDate}::date
       ORDER BY b.pickup_datetime ASC
     `;
 
-    // Get expenses
+    // Every car that worked in this period, with the job it belonged to. Used
+    // to credit each vehicle its share of the revenue and all of its own costs.
+    const bookingVehicles = await sql`
+      SELECT
+        bv.*,
+        b.booking_ref, b.paid_amount, b.invoice_number, b.pickup_datetime,
+        v.make as vehicle_make, v.model as vehicle_model, v.plate_number,
+        d.full_name as driver_name,
+        (SELECT COUNT(*)::int FROM booking_vehicles x WHERE x.booking_id = bv.booking_id) as vehicles_on_booking
+      FROM booking_vehicles bv
+      JOIN bookings b ON bv.booking_id = b.id
+      LEFT JOIN vehicles v ON bv.vehicle_id = v.id
+      LEFT JOIN drivers d ON bv.driver_id = d.id
+      WHERE b.pickup_datetime::date BETWEEN ${startDate}::date AND ${endDate}::date
+      ORDER BY b.pickup_datetime ASC
+    `;
+
     const expenses = await sql`
       SELECT * FROM expenses
       WHERE expense_date BETWEEN ${startDate}::date AND ${endDate}::date
       ORDER BY expense_date ASC
     `;
 
-    // Get all vehicles and drivers for summary
     const vehicles = await sql`SELECT * FROM vehicles ORDER BY make`;
     const drivers = await sql`SELECT * FROM drivers ORDER BY full_name`;
 
@@ -85,6 +94,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       period: { type, year, month, weekNum, startDate, endDate },
       bookings,
+      bookingVehicles,
       expenses,
       vehicles,
       drivers,

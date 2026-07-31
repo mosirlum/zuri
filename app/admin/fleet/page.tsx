@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState, useCallback, memo } from "react";
 import { Plus, Car, AlertTriangle, CheckCircle, Edit, Trash2 } from "lucide-react";
@@ -233,6 +233,26 @@ function DeleteVehicleModal({ vehicle, onClose, onDeleted }: {
   );
 }
 
+// Declared at module level on purpose. If this lived inside VehicleForm it
+// would be a brand-new component on every keystroke, so React would tear down
+// the input and rebuild it — which is what makes the caret jump to the end.
+function F({ label, value, onChange, type = "text", options }: any) {
+  return (
+    <div>
+      <label className="block text-xs tracking-widest uppercase text-muted mb-1.5 font-medium">{label}</label>
+      {options ? (
+        <select value={value} onChange={e => onChange(e.target.value)}
+          className="w-full border border-ink/15 bg-paper text-ink px-3 py-2.5 rounded-lg text-sm outline-none focus:border-gold">
+          {options.map((o: string) => <option key={o} value={o}>{o.replace(/_/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase())}</option>)}
+        </select>
+      ) : (
+        <input type={type} value={value} onChange={e => onChange(e.target.value)} autoComplete="off"
+          className="w-full border border-ink/15 bg-paper text-ink px-3 py-2.5 rounded-lg text-sm outline-none focus:border-gold transition-colors" />
+      )}
+    </div>
+  );
+}
+
 function VehicleForm({ vehicle, onClose, onSave }: {
   vehicle: Vehicle | null;
   onClose: () => void;
@@ -280,21 +300,6 @@ function VehicleForm({ vehicle, onClose, onSave }: {
     setSaving(false);
     onSave();
   };
-
-  const F = ({ label, value, onChange, type = "text", options }: any) => (
-    <div>
-      <label className="block text-xs tracking-widest uppercase text-muted mb-1.5 font-medium">{label}</label>
-      {options ? (
-        <select value={value} onChange={e => onChange(e.target.value)}
-          className="w-full border border-ink/15 bg-paper text-ink px-3 py-2.5 rounded-lg text-sm outline-none focus:border-gold">
-          {options.map((o: string) => <option key={o} value={o}>{o.replace(/_/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase())}</option>)}
-        </select>
-      ) : (
-        <input type={type} value={value} onChange={e => onChange(e.target.value)} autoComplete="off"
-          className="w-full border border-ink/15 bg-paper text-ink px-3 py-2.5 rounded-lg text-sm outline-none focus:border-gold transition-colors" />
-      )}
-    </div>
-  );
 
   return (
     <div className="fixed inset-0 z-50 bg-ink/60 flex items-center justify-center p-4">
@@ -397,10 +402,6 @@ export default function FleetPage() {
         </button>
       </div>
 
-      <div className="bg-paper-soft border border-ink/10 rounded-2xl px-5 py-3 text-sm text-ink-soft">
-        Only vehicles Zuri owns belong here. Borrowing a car for a single job? Choose <strong className="text-ink">Borrowed for this job</strong> when creating that booking instead — nothing gets added to the fleet.
-      </div>
-
       <div className="flex gap-2 flex-wrap">
         {["all", "available", "on_hire", "maintenance"].map(f => (
           <button key={f} onClick={() => setFilter(f)}
@@ -445,4 +446,3 @@ export default function FleetPage() {
     </div>
   );
 }
-

@@ -1,58 +1,65 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { neon } from "@neondatabase/serverless";
 
 const sql = neon(process.env.DATABASE_URL!);
 
-// Records the invoice AND all trip costs in one step, matching how Ray works:
-// car returns, he writes the invoice, and enters everything at once — including
-// what he owes the owner of a borrowed car, which is only settled at that point.
-// Status stays 'confirmed' until payment is received (see /bookings/payment).
+// Records the invoice for the whole job, plus each vehicle's own costs.
+// The customer gets one invoice no matter how many cars were used; the costs
+// stay attached to the individual cars so per-vehicle reporting stays honest.
 export async function PUT(req: NextRequest) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
     const body = await req.json();
-    const {
-      id, invoice_number, invoice_date, paid_amount, km_travelled,
-      fuel_cost, driver_allowance, emergency_cost,
-      emergency_notes, trip_notes,
-      borrowed_payout_type, borrowed_payout_percent, borrowed_payout_fixed
-    } = body;
+    const { id, invoice_number, invoice_date, paid_amount, trip_notes } = body;
 
     if (!invoice_number || !invoice_date) {
       return NextResponse.json({ error: "Invoice number and date are required" }, { status: 400 });
     }
 
-    const fuelAmt = parseFloat(fuel_cost) || 0;
-    const allowanceAmt = parseFloat(driver_allowance) || 0;
-    const emergencyAmt = parseFloat(emergency_cost) || 0;
     const tripAmount = parseFloat(paid_amount) || 0;
-    const totalTripCost = fuelAmt + allowanceAmt + emergencyAmt;
+    const rows = Array.isArray(body.vehicles) ? body.vehicles : [];
 
-    const bookingRow = await sql`
-      SELECT is_borrowed_vehicle, borrowed_owner_name FROM bookings WHERE id = ${id} LIMIT 1
-    `;
-    const bk = bookingRow[0];
+    let totalTripCost = 0;
+    let totalOwnerPayout = 0;
+    let totalEmergency = 0;
+    const emergencyNotes: string[] = [];
 
-    // Work out what goes back to the owner of a borrowed car — either an agreed
-    // flat amount or a percentage of the invoice, whichever was settled.
-    let ownerPayout = 0;
-    let payoutType: string | null = null;
-    let payoutPercent: number | null = null;
-    let payoutFixed: number | null = null;
+    // Each row carries one vehicle's numbers. A borrowed car's payout is
+    // settled here too — either a flat agreed amount or a share of the invoice.
+    const computed = rows.map((v: any) => {
+      const fuel = parseFloat(v.fuel_cost) || 0;
+      const allowance = parseFloat(v.driver_allowance) || 0;
+      const emergency = parseFloat(v.emergency_cost) || 0;
 
-    if (bk?.is_borrowed_vehicle) {
-      payoutType = borrowed_payout_type || "fixed";
-      if (payoutType === "percent") {
-        payoutPercent = parseFloat(borrowed_payout_percent) || 0;
-        ownerPayout = tripAmount * (payoutPercent / 100);
-      } else {
-        payoutFixed = parseFloat(borrowed_payout_fixed) || 0;
-        ownerPayout = payoutFixed;
+      let payout = 0;
+      let payoutType: string | null = null;
+      let payoutPercent: number | null = null;
+      let payoutFixed: number | null = null;
+
+      if (v.is_borrowed) {
+        payoutType = v.borrowed_payout_type || "fixed";
+        if (payoutType === "percent") {
+          payoutPercent = parseFloat(v.borrowed_payout_percent) || 0;
+          // A percentage is taken against this vehicle's share of the invoice,
+          // so two borrowed cars on one job don't each claim the whole amount.
+          const share = rows.length > 0 ? tripAmount / rows.length : tripAmount;
+          payout = share * (payoutPercent / 100);
+        } else {
+          payoutFixed = parseFloat(v.borrowed_payout_fixed) || 0;
+          payout = payoutFixed;
+        }
       }
-    }
+
+      totalTripCost += fuel + allowance + emergency;
+      totalOwnerPayout += payout;
+      totalEmergency += emergency;
+      if (emergency > 0 && v.emergency_notes) emergencyNotes.push(v.emergency_notes);
+
+      return { ...v, fuel, allowance, emergency, payout, payoutType, payoutPercent, payoutFixed };
+    });
 
     const result = await sql`
       UPDATE bookings SET
@@ -60,14 +67,10 @@ export async function PUT(req: NextRequest) {
         invoice_date = ${invoice_date},
         payment_status = 'unpaid',
         paid_amount = ${tripAmount},
-        km_travelled = ${parseFloat(km_travelled) || null},
         trip_cost = ${totalTripCost},
-        borrowed_payout_type = ${payoutType},
-        borrowed_payout_percent = ${payoutPercent},
-        borrowed_payout_fixed = ${payoutFixed},
-        owner_payout_amount = ${ownerPayout || null},
-        emergency_cost = ${emergencyAmt},
-        emergency_notes = ${emergency_notes || null},
+        owner_payout_amount = ${totalOwnerPayout || null},
+        emergency_cost = ${totalEmergency},
+        emergency_notes = ${emergencyNotes.length ? emergencyNotes.join(" · ") : null},
         trip_notes = ${trip_notes || null},
         updated_at = NOW()
       WHERE id = ${id} AND status = 'confirmed'
@@ -77,40 +80,62 @@ export async function PUT(req: NextRequest) {
     if (result.length === 0) {
       return NextResponse.json({ error: "Booking not found or already completed" }, { status: 404 });
     }
-
     const booking = result[0];
 
-    // Replace any previously-logged trip expenses (in case Ray is correcting
-    // the invoice before payment) then insert fresh ones.
+    for (const v of computed) {
+      if (!v.id) continue;
+      await sql`
+        UPDATE booking_vehicles SET
+          km_travelled = ${v.km_travelled ? parseFloat(v.km_travelled) : null},
+          fuel_cost = ${v.fuel},
+          driver_allowance = ${v.allowance},
+          emergency_cost = ${v.emergency},
+          emergency_notes = ${v.emergency_notes || null},
+          borrowed_payout_type = ${v.payoutType},
+          borrowed_payout_percent = ${v.payoutPercent},
+          borrowed_payout_fixed = ${v.payoutFixed},
+          owner_payout_amount = ${v.payout || null},
+          updated_at = NOW()
+        WHERE id = ${v.id} AND booking_id = ${id}
+      `;
+    }
+
+    // Rebuild this booking's trip expenses from scratch so corrections before
+    // payment don't leave stale rows behind.
     await sql`DELETE FROM expenses WHERE booking_id = ${id} AND expense_type = 'trip'`;
 
-    if (fuelAmt > 0) {
-      await sql`
-        INSERT INTO expenses (category, description, amount, currency, expense_date, booking_id, expense_type)
-        VALUES ('fuel', ${'Fuel — ' + booking.booking_ref}, ${fuelAmt}, 'TZS', CURRENT_DATE, ${id}, 'trip')
-      `;
-    }
+    for (const v of computed) {
+      const label = v.is_borrowed
+        ? (v.borrowed_vehicle_desc || "Borrowed vehicle")
+        : [v.vehicle_make, v.vehicle_model].filter(Boolean).join(" ") || "Vehicle";
+      const tag = `${booking.booking_ref} · ${label}`;
 
-    if (allowanceAmt > 0) {
-      await sql`
-        INSERT INTO expenses (category, description, amount, currency, expense_date, booking_id, expense_type)
-        VALUES ('driver_salary', ${'Driver allowance — ' + booking.booking_ref}, ${allowanceAmt}, 'TZS', CURRENT_DATE, ${id}, 'trip')
-      `;
-    }
-
-    if (emergencyAmt > 0) {
-      await sql`
-        INSERT INTO expenses (category, description, amount, currency, expense_date, booking_id, expense_type)
-        VALUES ('other', ${emergency_notes ? 'Emergency — ' + emergency_notes : 'Emergency — ' + booking.booking_ref}, ${emergencyAmt}, 'TZS', CURRENT_DATE, ${id}, 'trip')
-      `;
-    }
-
-    if (ownerPayout > 0) {
-      const ownerLabel = bk.borrowed_owner_name ? ` (${bk.borrowed_owner_name})` : "";
-      await sql`
-        INSERT INTO expenses (category, description, amount, currency, expense_date, booking_id, expense_type)
-        VALUES ('other', ${'Borrowed vehicle payout' + ownerLabel + ' — ' + booking.booking_ref}, ${ownerPayout}, 'TZS', CURRENT_DATE, ${id}, 'trip')
-      `;
+      if (v.fuel > 0) {
+        await sql`
+          INSERT INTO expenses (category, description, amount, currency, expense_date, booking_id, expense_type)
+          VALUES ('fuel', ${'Fuel — ' + tag}, ${v.fuel}, 'TZS', CURRENT_DATE, ${id}, 'trip')
+        `;
+      }
+      if (v.allowance > 0) {
+        await sql`
+          INSERT INTO expenses (category, description, amount, currency, expense_date, booking_id, expense_type)
+          VALUES ('driver_salary', ${'Driver allowance — ' + tag}, ${v.allowance}, 'TZS', CURRENT_DATE, ${id}, 'trip')
+        `;
+      }
+      if (v.emergency > 0) {
+        const note = v.emergency_notes ? `Emergency (${v.emergency_notes}) — ${tag}` : `Emergency — ${tag}`;
+        await sql`
+          INSERT INTO expenses (category, description, amount, currency, expense_date, booking_id, expense_type)
+          VALUES ('other', ${note}, ${v.emergency}, 'TZS', CURRENT_DATE, ${id}, 'trip')
+        `;
+      }
+      if (v.payout > 0) {
+        const owner = v.borrowed_owner_name ? ` (${v.borrowed_owner_name})` : "";
+        await sql`
+          INSERT INTO expenses (category, description, amount, currency, expense_date, booking_id, expense_type)
+          VALUES ('other', ${'Borrowed vehicle payout' + owner + ' — ' + tag}, ${v.payout}, 'TZS', CURRENT_DATE, ${id}, 'trip')
+        `;
+      }
     }
 
     return NextResponse.json(booking);
@@ -119,4 +144,3 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: "Database error" }, { status: 500 });
   }
 }
-

@@ -5,6 +5,8 @@ import { neon } from "@neondatabase/serverless";
 
 const sql = neon(process.env.DATABASE_URL!);
 
+const useSecureCookies = process.env.NODE_ENV === "production";
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
     Credentials({
@@ -71,7 +73,25 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   },
   session: {
     strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60, // 30 days
+    // Chrome restores session cookies when it reopens, so relying on the
+    // browser closing isn't enough on a shared office machine. An idle window
+    // is what actually protects the account: the session refreshes while
+    // someone is working and expires an hour after they stop.
+    maxAge: 60 * 60,
+    updateAge: 5 * 60,
+  },
+  cookies: {
+    sessionToken: {
+      name: `${useSecureCookies ? "__Secure-" : ""}authjs.session-token`,
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: useSecureCookies,
+        // No maxAge — browsers that honour session cookies will drop this on
+        // close. The idle window above is what guarantees it everywhere else.
+      },
+    },
   },
   secret: process.env.NEXTAUTH_SECRET,
 });

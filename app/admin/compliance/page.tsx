@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState, useCallback } from "react";
 import { Car, User, CheckCircle } from "lucide-react";
@@ -54,11 +54,11 @@ export default function CompliancePage() {
     vehicles.forEach((v: any) => {
       const name = `${v.make} ${v.model}${v.plate_number ? ` (${v.plate_number})` : ""}`;
       [
-        { label: "Insurance", date: v.insurance_expiry, action: "Renew insurance policy — contact insurer immediately" },
-        { label: "Operating Licence", date: v.operating_licence_expiry, action: "Renew operating licence at SUMATRA/LATRA office" },
-        { label: "Registration", date: v.registration_expiry, action: "Renew vehicle registration at TRA office" },
-        { label: "Road Worthiness", date: v.road_worthiness_expiry, action: "Book road worthiness test — ground vehicle until renewed" },
-        { label: "TRA Sticker", date: v.tra_sticker_expiry, action: "Renew TRA sticker at nearest TRA office" },
+        { label: "Insurance", date: v.insurance_expiry, action: "Renew insurance" },
+        { label: "Operating Licence", date: v.operating_licence_expiry, action: "Renew at LATRA" },
+        { label: "Registration", date: v.registration_expiry, action: "Renew at TRA" },
+        { label: "Road Worthiness", date: v.road_worthiness_expiry, action: "Book inspection" },
+        { label: "TRA Sticker", date: v.tra_sticker_expiry, action: "Renew at TRA" },
       ].forEach(({ label, date, action }) => {
         if (date) all.push({ entityType: "vehicle", entityName: name, docType: label, expiryDate: date, daysLeft: getDays(date), action });
       });
@@ -66,9 +66,9 @@ export default function CompliancePage() {
 
     drivers.forEach((d: any) => {
       [
-        { label: "Driving License", date: d.license_expiry, action: "Renew driving licence at SUMATRA licensing office" },
-        { label: "PSV Badge", date: d.psv_badge_expiry, action: "Renew PSV badge — suspend driver from passenger trips until renewed" },
-        { label: "Good Conduct", date: d.good_conduct_expiry, action: "Obtain new good conduct certificate from nearest police station" },
+        { label: "Driving License", date: d.license_expiry, action: "Renew licence" },
+        { label: "PSV Badge", date: d.psv_badge_expiry, action: "Renew PSV badge" },
+        { label: "Good Conduct", date: d.good_conduct_expiry, action: "Get new certificate" },
       ].forEach(({ label, date, action }) => {
         if (date) all.push({ entityType: "driver", entityName: d.full_name, docType: label, expiryDate: date, daysLeft: getDays(date), action });
       });
@@ -98,7 +98,7 @@ export default function CompliancePage() {
         <h1 className="font-display text-3xl font-medium text-ink">
           Compliance <em className="italic text-gold">Centre</em>
         </h1>
-        <p className="text-muted text-sm mt-1">Documents and expiry alerts.</p>
+        
       </div>
 
       {/* Summary */}
@@ -158,7 +158,7 @@ export default function CompliancePage() {
                     <p className="text-xs text-muted">{alert.docType}</p>
                     {alert.daysLeft <= 30 && (
                       <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 mt-1.5 inline-block">
-                        ⚡ {alert.action}
+                        {alert.action}
                       </p>
                     )}
                   </div>

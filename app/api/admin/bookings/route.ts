@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { neon } from "@neondatabase/serverless";
 
@@ -9,20 +9,50 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
+    // One booking is one job for the customer, but it may have used several
+    // cars — each with its own driver and its own costs.
     const bookings = await sql`
       SELECT
         b.*,
         c.full_name as customer_name, c.phone as customer_phone,
-        v.make as vehicle_make, v.model as vehicle_model, v.plate_number,
-        d.full_name as driver_name
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'id', bv.id,
+              'vehicle_id', bv.vehicle_id,
+              'driver_id', bv.driver_id,
+              'vehicle_make', v.make,
+              'vehicle_model', v.model,
+              'plate_number', v.plate_number,
+              'driver_name', d.full_name,
+              'is_borrowed', bv.is_borrowed,
+              'borrowed_vehicle_desc', bv.borrowed_vehicle_desc,
+              'borrowed_owner_name', bv.borrowed_owner_name,
+              'borrowed_owner_phone', bv.borrowed_owner_phone,
+              'borrowed_payout_type', bv.borrowed_payout_type,
+              'borrowed_payout_percent', bv.borrowed_payout_percent,
+              'borrowed_payout_fixed', bv.borrowed_payout_fixed,
+              'owner_payout_amount', bv.owner_payout_amount,
+              'km_travelled', bv.km_travelled,
+              'fuel_cost', bv.fuel_cost,
+              'driver_allowance', bv.driver_allowance,
+              'emergency_cost', bv.emergency_cost,
+              'emergency_notes', bv.emergency_notes
+            ) ORDER BY bv.id
+          ) FILTER (WHERE bv.id IS NOT NULL),
+          '[]'
+        ) as vehicles
       FROM bookings b
       LEFT JOIN customers c ON b.customer_id = c.id
-      LEFT JOIN vehicles v ON b.vehicle_id = v.id
-      LEFT JOIN drivers d ON b.driver_id = d.id
+      LEFT JOIN booking_vehicles bv ON bv.booking_id = b.id
+      LEFT JOIN vehicles v ON bv.vehicle_id = v.id
+      LEFT JOIN drivers d ON bv.driver_id = d.id
+      GROUP BY b.id, c.full_name, c.phone
       ORDER BY b.created_at DESC
     `;
     return NextResponse.json(bookings);
   } catch (err) {
+    console.error(err);
     return NextResponse.json({ error: "Database error" }, { status: 500 });
   }
 }
@@ -56,25 +86,17 @@ export async function POST(req: NextRequest) {
     const year = new Date().getFullYear();
     const bookingRef = `ZT-${year}-${seq}`;
 
-    const isBorrowed = !!body.is_borrowed_vehicle;
-
-    // For a borrowed car we only capture WHO and WHAT here. What Zuri owes the
-    // owner is agreed and entered later, at invoice time, once the trip is done.
     const result = await sql`
       INSERT INTO bookings (
-        booking_ref, customer_id, vehicle_id, driver_id,
+        booking_ref, customer_id,
         service_type, status,
         pickup_location, pickup_region,
         dropoff_location, dropoff_region,
         pickup_datetime, dropoff_datetime,
-        travel_details, notes,
-        is_borrowed_vehicle, borrowed_vehicle_desc,
-        borrowed_owner_name, borrowed_owner_phone
+        travel_details, notes
       ) VALUES (
         ${bookingRef},
         ${customerId},
-        ${isBorrowed ? null : (body.vehicle_id || null)},
-        ${body.driver_id || null},
         ${body.service_type},
         ${body.status || "confirmed"},
         ${body.pickup_location || null},
@@ -84,15 +106,31 @@ export async function POST(req: NextRequest) {
         ${body.pickup_datetime || null},
         ${body.dropoff_datetime || null},
         ${body.travel_details || null},
-        ${body.notes || null},
-        ${isBorrowed},
-        ${isBorrowed ? (body.borrowed_vehicle_desc || null) : null},
-        ${isBorrowed ? (body.borrowed_owner_name || null) : null},
-        ${isBorrowed ? (body.borrowed_owner_phone || null) : null}
+        ${body.notes || null}
       ) RETURNING *
     `;
+    const booking = result[0];
 
-    return NextResponse.json(result[0]);
+    const vehicles = Array.isArray(body.vehicles) ? body.vehicles : [];
+    for (const v of vehicles) {
+      const isBorrowed = !!v.is_borrowed;
+      await sql`
+        INSERT INTO booking_vehicles (
+          booking_id, vehicle_id, driver_id, is_borrowed,
+          borrowed_vehicle_desc, borrowed_owner_name, borrowed_owner_phone
+        ) VALUES (
+          ${booking.id},
+          ${isBorrowed ? null : (v.vehicle_id || null)},
+          ${v.driver_id || null},
+          ${isBorrowed},
+          ${isBorrowed ? (v.borrowed_vehicle_desc || null) : null},
+          ${isBorrowed ? (v.borrowed_owner_name || null) : null},
+          ${isBorrowed ? (v.borrowed_owner_phone || null) : null}
+        )
+      `;
+    }
+
+    return NextResponse.json(booking);
   } catch (err) {
     console.error(err);
     return NextResponse.json({ error: "Database error" }, { status: 500 });
@@ -108,8 +146,6 @@ export async function PUT(req: NextRequest) {
     const result = await sql`
       UPDATE bookings SET
         status = ${body.status},
-        vehicle_id = ${body.vehicle_id || null},
-        driver_id = ${body.driver_id || null},
         pickup_location = ${body.pickup_location || null},
         pickup_region = ${body.pickup_region || null},
         dropoff_location = ${body.dropoff_location || null},
@@ -118,10 +154,6 @@ export async function PUT(req: NextRequest) {
         dropoff_datetime = ${body.dropoff_datetime || null},
         travel_details = ${body.travel_details || null},
         notes = ${body.notes || null},
-        quoted_amount = ${body.quoted_amount || null},
-        paid_amount = ${body.paid_amount || 0},
-        payment_method = ${body.payment_method || null},
-        payment_status = ${body.payment_status || "unpaid"},
         updated_at = NOW()
       WHERE id = ${body.id}
       RETURNING *
@@ -132,4 +164,3 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: "Database error" }, { status: 500 });
   }
 }
-

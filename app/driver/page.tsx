@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
@@ -40,7 +40,7 @@ function EditDocsForm({ driver, onClose, onSave }: {
       }
       onSave();
     } catch {
-      setError("Network error — try again");
+      setError("Network error");
       setSaving(false);
     }
   };
@@ -52,7 +52,7 @@ function EditDocsForm({ driver, onClose, onSave }: {
     <div className="fixed inset-0 z-50 bg-ink/60 flex items-center justify-center p-4">
       <div className="bg-paper rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="px-6 py-4 border-b border-ink/10 flex items-center justify-between sticky top-0 bg-paper z-10">
-          <h2 className="font-display text-xl font-medium">Update My Documents</h2>
+          <h2 className="font-display text-xl font-medium">My Documents</h2>
           <button onClick={onClose} className="text-muted hover:text-ink text-xl">✕</button>
         </div>
 
@@ -60,13 +60,11 @@ function EditDocsForm({ driver, onClose, onSave }: {
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-xl">{error}</div>
           )}
-          <p className="text-xs text-muted -mt-1">Update these after you renew — Ray and staff will see the new dates automatically.</p>
-
-          <div><label className={lbl}>Driving License Number</label><input value={licenseNumber} onChange={e => setLicenseNumber(e.target.value)} autoComplete="off" className={inp} /></div>
-          <div><label className={lbl}>Driving License Expiry</label><input type="date" value={licenseExpiry} onChange={e => setLicenseExpiry(e.target.value)} className={inp} /></div>
+          <div><label className={lbl}>License Number</label><input value={licenseNumber} onChange={e => setLicenseNumber(e.target.value)} autoComplete="off" className={inp} /></div>
+          <div><label className={lbl}>License Expiry</label><input type="date" value={licenseExpiry} onChange={e => setLicenseExpiry(e.target.value)} className={inp} /></div>
           <div><label className={lbl}>PSV Badge Number</label><input value={psvBadgeNumber} onChange={e => setPsvBadgeNumber(e.target.value)} autoComplete="off" className={inp} /></div>
           <div><label className={lbl}>PSV Badge Expiry</label><input type="date" value={psvBadgeExpiry} onChange={e => setPsvBadgeExpiry(e.target.value)} className={inp} /></div>
-          <div><label className={lbl}>Good Conduct Certificate Expiry</label><input type="date" value={goodConductExpiry} onChange={e => setGoodConductExpiry(e.target.value)} className={inp} /></div>
+          <div><label className={lbl}>Good Conduct Expiry</label><input type="date" value={goodConductExpiry} onChange={e => setGoodConductExpiry(e.target.value)} className={inp} /></div>
         </div>
 
         <div className="px-6 py-4 border-t border-ink/10 flex gap-3 justify-end">
@@ -110,7 +108,6 @@ export default function DriverPortal() {
   const docs = driver ? [
     { label: "Driving License", date: driver.license_expiry },
     { label: "PSV Badge", date: driver.psv_badge_expiry },
-    { label: "Medical Certificate", date: driver.medical_cert_expiry },
     { label: "Good Conduct", date: driver.good_conduct_expiry },
   ] : [];
 
@@ -127,7 +124,6 @@ export default function DriverPortal() {
 
   return (
     <div className="space-y-6">
-      {/* Greeting */}
       <div className="bg-ink text-paper rounded-2xl p-5">
         <div className="text-paper/60 text-xs tracking-widest uppercase mb-1">
           {new Date().toLocaleDateString("en-TZ", { weekday: "long", day: "numeric", month: "long" })}
@@ -149,14 +145,12 @@ export default function DriverPortal() {
         )}
       </div>
 
-      {/* Assignments */}
       <div>
         <h2 className="font-display text-xl font-medium text-ink mb-3">Your Assignments</h2>
         {assignments.length === 0 ? (
           <div className="bg-paper rounded-2xl border border-ink/10 p-8 text-center">
             <CheckCircle className="w-10 h-10 text-muted mx-auto mb-3" />
             <p className="text-muted text-sm">No active assignments.</p>
-            <p className="text-xs text-muted mt-1">New trips will appear here when assigned.</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -197,7 +191,7 @@ export default function DriverPortal() {
                       <div className="flex items-start gap-2 text-sm">
                         <MapPin className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
                         <div>
-                          <div className="text-xs text-muted">Pickup — {a.pickup_region}</div>
+                          <div className="text-xs text-muted">{a.pickup_region}</div>
                           <div className="text-ink">{a.pickup_location}</div>
                         </div>
                       </div>
@@ -205,7 +199,7 @@ export default function DriverPortal() {
                         <div className="flex items-start gap-2 text-sm">
                           <MapPin className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
                           <div>
-                            <div className="text-xs text-muted">Dropoff — {a.dropoff_region}</div>
+                            <div className="text-xs text-muted">{a.dropoff_region}</div>
                             <div className="text-ink">{a.dropoff_location}</div>
                           </div>
                         </div>
@@ -214,17 +208,14 @@ export default function DriverPortal() {
                   )}
 
                   {a.travel_details && (
-                    <div className="bg-paper-soft rounded-xl p-3 text-xs text-ink-soft">
-                      <span className="font-medium text-muted uppercase tracking-wider">Travel Details: </span>
-                      {a.travel_details}
-                    </div>
+                    <div className="bg-paper-soft rounded-xl p-3 text-xs text-ink-soft">{a.travel_details}</div>
                   )}
 
                   {a.pickup_location && (
                     <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(a.pickup_location)}`}
                       target="_blank" rel="noopener noreferrer"
                       className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
-                      <Navigation className="w-4 h-4" /> Open in Google Maps
+                      <Navigation className="w-4 h-4" /> Google Maps
                     </a>
                   )}
                 </div>
@@ -234,13 +225,12 @@ export default function DriverPortal() {
         )}
       </div>
 
-      {/* Documents */}
       <div>
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-display text-xl font-medium text-ink">My Documents</h2>
-          <button onClick={() => setShowEdit(true)}
-            className="flex items-center gap-1.5 text-xs bg-ink text-paper px-3 py-2 rounded-xl font-medium hover:bg-gold hover:text-ink transition-colors">
-            <Pencil className="w-3.5 h-3.5" /> Update
+          <button onClick={() => setShowEdit(true)} title="Update"
+            className="p-2 text-muted hover:text-gold hover:bg-gold/10 rounded-lg transition-colors">
+            <Pencil className="w-4 h-4" />
           </button>
         </div>
         <div className="bg-paper rounded-2xl border border-ink/10 overflow-hidden">
@@ -270,9 +260,6 @@ export default function DriverPortal() {
             })}
           </div>
         </div>
-        <p className="text-xs text-muted mt-2">
-          Renewed a document? Tap "Update" above to enter the new number and date yourself.
-        </p>
       </div>
 
       {showEdit && (

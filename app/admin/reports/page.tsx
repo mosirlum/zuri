@@ -1,7 +1,7 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { BarChart3, Lock, TrendingUp, Car, Building2, CalendarCheck, Download, FileText, DollarSign, AlertTriangle, Clock } from "lucide-react";
+import { BarChart3, Lock, TrendingUp, TrendingDown, Car, Building2, CalendarCheck, Download, FileText, DollarSign, AlertTriangle, Clock, Minus } from "lucide-react";
 import { useSession } from "next-auth/react";
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -39,11 +39,65 @@ const tripCostOf = (b: any) => (parseFloat(b.trip_cost) || 0) + (parseFloat(b.ow
 const isVehicleCost = (e: any) =>
   e.expense_type === "trip" || VEHICLE_CATEGORIES.has(e.category);
 
+
+// Pulls the same four headline numbers out of any period's payload, so the
+// current and previous periods can be measured the same way.
+function metricsOf(payload: any) {
+  const expenses = payload?.expenses || [];
+  const revenue = payload?.summary?.totalRevenue || 0;
+  const vehicleCosts = expenses.filter(isVehicleCost).reduce((s: number, e: any) => s + parseFloat(e.amount || 0), 0);
+  const companyCosts = expenses.filter((e: any) => !isVehicleCost(e)).reduce((s: number, e: any) => s + parseFloat(e.amount || 0), 0);
+  return { revenue, vehicleCosts, companyCosts, net: revenue - vehicleCosts - companyCosts };
+}
+
+// The period immediately before the one being viewed. "All time" has none.
+function previousPeriod(mode: string, year: number, month: number, week: number) {
+  if (mode === "all") return null;
+  if (mode === "year") return { type: "year", year: year - 1, month, week, label: `${year - 1}` };
+  if (mode === "month") {
+    const m = month === 0 ? 11 : month - 1;
+    const y = month === 0 ? year - 1 : year;
+    return { type: "month", year: y, month: m, week, label: `${MONTHS[m]} ${y}` };
+  }
+  if (mode === "week") {
+    const w = week === 1 ? 52 : week - 1;
+    const y = week === 1 ? year - 1 : year;
+    return { type: "week", year: y, month, week: w, label: `Week ${w}` };
+  }
+  return null;
+}
+
+// Green means the number moved in the direction the business wants — up for
+// revenue and profit, down for costs.
+function Delta({ current, previous, label, lowerIsBetter = false }: {
+  current: number; previous: number; label: string; lowerIsBetter?: boolean;
+}) {
+  if (!previous) return null;
+  const diff = current - previous;
+  const pct = Math.round((diff / Math.abs(previous)) * 100);
+  if (pct === 0) {
+    return (
+      <div className="flex items-center gap-1 text-[0.7rem] text-muted mt-1.5">
+        <Minus className="w-3 h-3" /> same as {label}
+      </div>
+    );
+  }
+  const good = lowerIsBetter ? diff < 0 : diff > 0;
+  const Icon = diff > 0 ? TrendingUp : TrendingDown;
+  return (
+    <div className={`flex items-center gap-1 text-[0.7rem] mt-1.5 font-medium ${good ? "text-green-600" : "text-red-500"}`}>
+      <Icon className="w-3 h-3" />
+      {pct > 0 ? "+" : ""}{pct}% <span className="text-muted font-normal">vs {label}</span>
+    </div>
+  );
+}
+
 export default function ReportsPage() {
   const { data: session } = useSession();
   const role = (session?.user as any)?.role;
 
   const [data, setData] = useState<any>(null);
+  const [prevData, setPrevData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
 
@@ -62,9 +116,19 @@ export default function ReportsPage() {
       month: selectedMonth.toString(),
       week: selectedWeek.toString(),
     });
-    const res = await fetch(`/api/admin/reports?${params}`);
-    const json = await res.json();
-    setData(json);
+    const prev = previousPeriod(filterMode, selectedYear, selectedMonth, selectedWeek);
+    const prevParams = prev && new URLSearchParams({
+      type: prev.type, year: prev.year.toString(),
+      month: prev.month.toString(), week: prev.week.toString(),
+    });
+
+    const [res, prevRes] = await Promise.all([
+      fetch(`/api/admin/reports?${params}`),
+      prevParams ? fetch(`/api/admin/reports?${prevParams}`) : Promise.resolve(null),
+    ]);
+
+    setData(await res.json());
+    setPrevData(prevRes ? await prevRes.json() : null);
     setLoading(false);
   }, [filterMode, selectedYear, selectedMonth, selectedWeek]);
 
@@ -76,6 +140,7 @@ export default function ReportsPage() {
   const bookings = data?.bookings || [];
   const expenses = data?.expenses || [];
   const vehicles = data?.vehicles || [];
+  const bookingVehicles = data?.bookingVehicles || [];
 
   // ── Two-layer P&L ──────────────────────────────────────────────
   const vehicleCosts = expenses.filter(isVehicleCost).reduce((s: number, e: any) => s + parseFloat(e.amount || 0), 0);
@@ -83,6 +148,9 @@ export default function ReportsPage() {
   const revenue = summary?.totalRevenue || 0;
   const grossFromOperations = revenue - vehicleCosts;
   const netProfit = grossFromOperations - companyCosts;
+
+  const prev = previousPeriod(filterMode, selectedYear, selectedMonth, selectedWeek);
+  const prevM = prevData ? metricsOf(prevData) : null;
 
   const invoicedTrips = bookings.filter(isInvoiced);
   const avgPerTrip = invoicedTrips.length > 0 ? revenue / invoicedTrips.length : 0;
@@ -92,31 +160,46 @@ export default function ReportsPage() {
   const outstandingAmount = unpaid.reduce((s: number, b: any) => s + parseFloat(b.paid_amount || 0), 0);
 
   // ── Per-vehicle performance ────────────────────────────────────
+  // A job billed once may have used several cars. Each car keeps all of its
+  // own costs and takes an equal share of what the job earned, so two coasters
+  // on one trip each show half the revenue rather than the full amount twice.
   const buildVehiclePerformance = () => {
-    const totalTrips = invoicedTrips.length;
+    const worked = bookingVehicles.filter((bv: any) => bv.invoice_number);
+    const totalStints = worked.length;
+
+    const revenueShare = (bv: any) => {
+      const total = parseFloat(bv.paid_amount) || 0;
+      const n = bv.vehicles_on_booking || 1;
+      return total / n;
+    };
+    const costOf = (bv: any) =>
+      (parseFloat(bv.fuel_cost) || 0) +
+      (parseFloat(bv.driver_allowance) || 0) +
+      (parseFloat(bv.emergency_cost) || 0) +
+      (parseFloat(bv.owner_payout_amount) || 0);
 
     const rows = vehicles.map((v: any) => {
-      const vb = invoicedTrips.filter((b: any) => b.vehicle_id === v.id);
-      const rev = vb.reduce((s: number, b: any) => s + (parseFloat(b.paid_amount) || 0), 0);
-      const costs = vb.reduce((s: number, b: any) => s + tripCostOf(b), 0);
+      const mine = worked.filter((bv: any) => bv.vehicle_id === v.id);
+      const rev = mine.reduce((s: number, bv: any) => s + revenueShare(bv), 0);
+      const costs = mine.reduce((s: number, bv: any) => s + costOf(bv), 0);
       return {
         id: v.id,
         name: `${v.make} ${v.model}`,
         plate: v.plate_number,
         category: v.category,
-        trips: vb.length,
+        trips: mine.length,
         revenue: rev,
         costs,
         net: rev - costs,
-        share: totalTrips > 0 ? (vb.length / totalTrips) * 100 : 0,
+        share: totalStints > 0 ? (mine.length / totalStints) * 100 : 0,
         borrowed: false,
       };
     });
 
-    const bb = invoicedTrips.filter((b: any) => b.is_borrowed_vehicle);
+    const bb = worked.filter((bv: any) => bv.is_borrowed);
     if (bb.length > 0) {
-      const rev = bb.reduce((s: number, b: any) => s + (parseFloat(b.paid_amount) || 0), 0);
-      const costs = bb.reduce((s: number, b: any) => s + tripCostOf(b), 0);
+      const rev = bb.reduce((s: number, bv: any) => s + revenueShare(bv), 0);
+      const costs = bb.reduce((s: number, bv: any) => s + costOf(bv), 0);
       rows.push({
         id: -1,
         name: "Borrowed vehicles",
@@ -126,7 +209,7 @@ export default function ReportsPage() {
         revenue: rev,
         costs,
         net: rev - costs,
-        share: totalTrips > 0 ? (bb.length / totalTrips) * 100 : 0,
+        share: totalStints > 0 ? (bb.length / totalStints) * 100 : 0,
         borrowed: true,
       });
     }
@@ -271,9 +354,9 @@ export default function ReportsPage() {
             </td>
             <td>${v.trips}</td>
             <td>${Math.round(v.share)}%</td>
-            <td class="amount-green">${v.revenue > 0 ? "+" + v.revenue.toLocaleString() : "—"}</td>
-            <td class="amount-red">${v.costs > 0 ? "-" + v.costs.toLocaleString() : "—"}</td>
-            <td class="${v.net >= 0 ? "amount-gold" : "amount-red"}">${v.net !== 0 ? (v.net >= 0 ? "+" : "") + v.net.toLocaleString() : "—"}</td>
+            <td class="amount-green">${v.revenue > 0 ? "+" + Math.round(v.revenue).toLocaleString() : "—"}</td>
+            <td class="amount-red">${v.costs > 0 ? "-" + Math.round(v.costs).toLocaleString() : "—"}</td>
+            <td class="${v.net >= 0 ? "amount-gold" : "amount-red"}">${v.net !== 0 ? (v.net >= 0 ? "+" : "") + Math.round(v.net).toLocaleString() : "—"}</td>
           </tr>
         `).join("")}
         <tr class="total-row">
@@ -317,7 +400,15 @@ export default function ReportsPage() {
             <td>${b.pickup_datetime ? new Date(b.pickup_datetime).toLocaleDateString("en-TZ",{day:"numeric",month:"short",year:"numeric"}) : "—"}</td>
             <td>${b.customer_name || "—"}</td>
             <td>${SERVICE_LABELS[b.service_type] || b.service_type}</td>
-            <td>${b.is_borrowed_vehicle ? (b.borrowed_vehicle_desc || "Borrowed") : (b.vehicle_make ? b.vehicle_make+" "+b.vehicle_model : "—")}</td>
+            <td>${(() => {
+              const bvs = bookingVehicles.filter((bv: any) => bv.booking_id === b.id);
+              if (bvs.length === 0) return "—";
+              if (bvs.length === 1) {
+                const bv = bvs[0];
+                return bv.is_borrowed ? (bv.borrowed_vehicle_desc || "Borrowed") : [bv.vehicle_make, bv.vehicle_model].filter(Boolean).join(" ") || "—";
+              }
+              return bvs.length + " vehicles";
+            })()}</td>
             <td>${b.driver_name || "—"}</td>
             <td class="amount-green">+${parseFloat(b.paid_amount||0).toLocaleString()}</td>
             <td><span class="badge ${b.payment_status==="paid"?"badge-green":b.invoice_number?"badge-amber":"badge-red"}">${b.payment_status==="paid"?"Paid":b.invoice_number?"Awaiting payment":"Not invoiced"}</span></td>
@@ -475,16 +566,19 @@ export default function ReportsPage() {
               <TrendingUp className="w-6 h-6 text-green-600 mb-2" />
               <div className="font-display text-2xl font-medium text-green-700">{revenue.toLocaleString()}</div>
               <div className="text-xs text-green-600 mt-1">Revenue · TZS</div>
+              {prevM && prev && <Delta current={revenue} previous={prevM.revenue} label={prev.label} />}
             </div>
             <div className="bg-red-50 border border-red-200 rounded-2xl p-5">
               <Car className="w-6 h-6 text-red-500 mb-2" />
               <div className="font-display text-2xl font-medium text-red-600">{vehicleCosts.toLocaleString()}</div>
               <div className="text-xs text-red-500 mt-1">Vehicle costs · TZS</div>
+              {prevM && prev && <Delta current={vehicleCosts} previous={prevM.vehicleCosts} label={prev.label} lowerIsBetter />}
             </div>
             <div className="bg-orange-50 border border-orange-200 rounded-2xl p-5">
               <Building2 className="w-6 h-6 text-orange-500 mb-2" />
               <div className="font-display text-2xl font-medium text-orange-600">{companyCosts.toLocaleString()}</div>
               <div className="text-xs text-orange-500 mt-1">Company costs · TZS</div>
+              {prevM && prev && <Delta current={companyCosts} previous={prevM.companyCosts} label={prev.label} lowerIsBetter />}
             </div>
             <div className={`border rounded-2xl p-5 ${netProfit >= 0 ? "bg-gold/10 border-gold/30" : "bg-red-100 border-red-300"}`}>
               <DollarSign className={`w-6 h-6 mb-2 ${netProfit >= 0 ? "text-gold" : "text-red-600"}`} />
@@ -494,6 +588,7 @@ export default function ReportsPage() {
               <div className={`text-xs mt-1 ${netProfit >= 0 ? "text-gold" : "text-red-600"}`}>
                 {netProfit >= 0 ? "Net Profit" : "Net Loss"} · TZS
               </div>
+              {prevM && prev && <Delta current={netProfit} previous={prevM.net} label={prev.label} />}
             </div>
           </div>
 
@@ -501,7 +596,6 @@ export default function ReportsPage() {
           <div className="bg-paper rounded-2xl border border-ink/10 overflow-hidden">
             <div className="px-6 py-4 border-b border-ink/10">
               <h2 className="font-display text-xl font-medium">Profit &amp; Loss</h2>
-              <p className="text-xs text-muted mt-0.5">What the vehicles cost to run, and what the company costs to keep open — two separate layers</p>
             </div>
 
             <div className="divide-y divide-ink/5">
@@ -550,6 +644,56 @@ export default function ReportsPage() {
             </div>
           </div>
 
+          {prevM && prev && (
+            <div className="bg-paper rounded-2xl border border-ink/10 overflow-hidden">
+              <div className="px-6 py-4 border-b border-ink/10">
+                <h2 className="font-display text-xl font-medium">
+                  {getPeriodLabel()} <span className="text-muted font-normal">vs</span> {prev.label}
+                </h2>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-ink/10 bg-paper-soft">
+                      {["", getPeriodLabel(), prev.label, "Change"].map((h, i) => (
+                        <th key={i} className="px-4 py-3 text-left text-xs tracking-widest uppercase text-muted whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-ink/5">
+                    {[
+                      { label: "Revenue", now: revenue, then: prevM.revenue, lowerIsBetter: false },
+                      { label: "Vehicle costs", now: vehicleCosts, then: prevM.vehicleCosts, lowerIsBetter: true },
+                      { label: "Company costs", now: companyCosts, then: prevM.companyCosts, lowerIsBetter: true },
+                      { label: "Net", now: netProfit, then: prevM.net, lowerIsBetter: false },
+                    ].map(row => {
+                      const diff = row.now - row.then;
+                      const pct = row.then ? Math.round((diff / Math.abs(row.then)) * 100) : null;
+                      const good = row.lowerIsBetter ? diff < 0 : diff > 0;
+                      return (
+                        <tr key={row.label} className="hover:bg-paper-soft transition-colors">
+                          <td className="px-4 py-3 text-sm font-medium text-ink">{row.label}</td>
+                          <td className="px-4 py-3 text-sm text-ink whitespace-nowrap">{row.now.toLocaleString()}</td>
+                          <td className="px-4 py-3 text-sm text-muted whitespace-nowrap">{row.then.toLocaleString()}</td>
+                          <td className="px-4 py-3 text-sm whitespace-nowrap">
+                            {pct === null ? (
+                              <span className="text-muted">—</span>
+                            ) : (
+                              <span className={`font-semibold ${diff === 0 ? "text-muted" : good ? "text-green-600" : "text-red-500"}`}>
+                                {diff > 0 ? "+" : ""}{diff.toLocaleString()}
+                                <span className="font-normal text-muted"> ({pct > 0 ? "+" : ""}{pct}%)</span>
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* Key indicators */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-paper rounded-2xl border border-ink/10 p-5">
@@ -581,7 +725,6 @@ export default function ReportsPage() {
             <div className="px-6 py-4 border-b border-ink/10 flex items-center justify-between flex-wrap gap-2">
               <div>
                 <h2 className="font-display text-xl font-medium">Vehicle Performance</h2>
-                <p className="text-xs text-muted mt-0.5">What each car earned and contributed this period</p>
               </div>
               {bestVehicle && (
                 <span className="text-xs bg-gold/10 text-gold border border-gold/30 px-3 py-1.5 rounded-full font-medium">
@@ -594,8 +737,8 @@ export default function ReportsPage() {
               <div className="mx-6 mt-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-2 text-sm">
                 <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
                 <div className="text-amber-800">
-                  <strong>{idleVehicles.length} vehicle{idleVehicles.length === 1 ? "" : "s"} earned nothing this period</strong>
-                  <span className="text-amber-700"> — {idleVehicles.map((v: any) => v.name).join(", ")}. They still cost insurance, licences and upkeep.</span>
+                  <span className="font-medium">Idle</span>
+                  <span className="text-amber-700"> — {idleVehicles.map((v: any) => v.name).join(", ")}</span>
                 </div>
               </div>
             )}
@@ -634,14 +777,14 @@ export default function ReportsPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3 text-sm whitespace-nowrap">
-                          {v.revenue > 0 ? <span className="text-green-600 font-semibold">+{v.revenue.toLocaleString()}</span> : <span className="text-muted">—</span>}
+                          {v.revenue > 0 ? <span className="text-green-600 font-semibold">+{Math.round(v.revenue).toLocaleString()}</span> : <span className="text-muted">—</span>}
                         </td>
                         <td className="px-4 py-3 text-sm whitespace-nowrap">
-                          {v.costs > 0 ? <span className="text-red-500">-{v.costs.toLocaleString()}</span> : <span className="text-muted">—</span>}
+                          {v.costs > 0 ? <span className="text-red-500">-{Math.round(v.costs).toLocaleString()}</span> : <span className="text-muted">—</span>}
                         </td>
                         <td className="px-4 py-3 text-sm whitespace-nowrap">
                           {v.trips > 0 ? (
-                            <span className={`font-bold ${v.net >= 0 ? "text-gold" : "text-red-600"}`}>{v.net >= 0 ? "+" : ""}{v.net.toLocaleString()}</span>
+                            <span className={`font-bold ${v.net >= 0 ? "text-gold" : "text-red-600"}`}>{v.net >= 0 ? "+" : ""}{Math.round(v.net).toLocaleString()}</span>
                           ) : <span className="text-muted">—</span>}
                         </td>
                       </tr>
@@ -649,9 +792,6 @@ export default function ReportsPage() {
                   })}
                 </tbody>
               </table>
-            </div>
-            <div className="px-6 py-3 bg-paper-soft border-t border-ink/10 text-xs text-muted">
-              Net here is revenue minus that trip's direct costs (fuel, allowance, emergency, borrowed-vehicle payouts). Company overheads like rent and salaries sit outside this table.
             </div>
           </div>
 
@@ -708,8 +848,15 @@ export default function ReportsPage() {
                       <td className="px-4 py-3 text-sm text-ink">{b.customer_name || "—"}</td>
                       <td className="px-4 py-3 text-sm text-ink-soft whitespace-nowrap">{SERVICE_LABELS[b.service_type] || b.service_type}</td>
                       <td className="px-4 py-3 text-sm text-ink-soft whitespace-nowrap">
-                        {b.is_borrowed_vehicle ? (b.borrowed_vehicle_desc || "Borrowed") : (b.vehicle_make ? `${b.vehicle_make} ${b.vehicle_model}` : "—")}
-                        {b.is_borrowed_vehicle && <span className="ml-1.5 text-[0.6rem] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 font-medium">Borrowed</span>}
+                        {(() => {
+                          const bvs = bookingVehicles.filter((bv: any) => bv.booking_id === b.id);
+                          if (bvs.length === 0) return "—";
+                          if (bvs.length === 1) {
+                            const bv = bvs[0];
+                            return bv.is_borrowed ? (bv.borrowed_vehicle_desc || "Borrowed") : [bv.vehicle_make, bv.vehicle_model].filter(Boolean).join(" ") || "—";
+                          }
+                          return `${bvs.length} vehicles`;
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-sm text-ink-soft whitespace-nowrap">{b.driver_name || "—"}</td>
                       <td className="px-4 py-3 text-sm font-semibold text-green-600 whitespace-nowrap">
@@ -735,4 +882,3 @@ export default function ReportsPage() {
     </div>
   );
 }
-

@@ -1,7 +1,7 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Plus, UserCog, Edit, ShieldCheck, KeyRound } from "lucide-react";
+import { Plus, Edit, Trash2 } from "lucide-react";
 
 interface AppUser {
   id: number;
@@ -24,6 +24,85 @@ const roleLabels: Record<string, string> = {
   staff: "Staff",
   driver: "Driver",
 };
+
+function DeleteUserModal({ user, onClose, onDeleted }: {
+  user: AppUser;
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  const [deleting, setDeleting] = useState(false);
+  const [blocked, setBlocked] = useState<{ count: number; message: string } | null>(null);
+  const [error, setError] = useState("");
+
+  const handleDelete = async () => {
+    setError("");
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/admin/users/delete", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: user.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.error === "has_history") {
+          setBlocked({ count: data.count, message: data.message });
+        } else {
+          setError(data.error || "Something went wrong");
+        }
+        setDeleting(false);
+        return;
+      }
+      onDeleted();
+    } catch {
+      setError("Network error");
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-ink/60 flex items-center justify-center p-4">
+      <div className="bg-paper rounded-2xl w-full max-w-sm">
+        <div className="px-6 py-4 border-b border-ink/10 flex items-center justify-between">
+          <h2 className="font-display text-xl font-medium">{blocked ? "Can't Delete" : "Delete User"}</h2>
+          <button onClick={onClose} className="text-muted hover:text-ink text-xl">✕</button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-xl">{error}</div>}
+
+          <div className="bg-paper-soft border border-ink/10 rounded-xl px-4 py-3">
+            <div className="text-sm font-semibold text-ink">{user.full_name}</div>
+            <div className="text-xs text-muted mt-0.5">{user.email} · {roleLabels[user.role] || user.role}</div>
+          </div>
+
+          {blocked ? (
+            <>
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm px-4 py-3 rounded-xl">
+                {blocked.message}
+              </div>
+              <p className="text-xs text-muted">Uncheck <strong className="text-ink">Account is active</strong> instead — they lose access, the records stay.</p>
+            </>
+          ) : (
+            <p className="text-sm text-ink-soft">This cannot be undone.</p>
+          )}
+        </div>
+
+        <div className="px-6 py-4 border-t border-ink/10 flex gap-3 justify-end">
+          <button onClick={onClose} className="px-5 py-2.5 text-sm text-muted border border-ink/15 rounded-xl">
+            {blocked ? "Close" : "Cancel"}
+          </button>
+          {!blocked && (
+            <button onClick={handleDelete} disabled={deleting}
+              className="px-5 py-2.5 text-sm bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 disabled:opacity-50">
+              {deleting ? "Deleting..." : "Delete"}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function UserForm({ user, onClose, onSave }: {
   user: AppUser | null;
@@ -130,7 +209,6 @@ function UserForm({ user, onClose, onSave }: {
             <div>
               <label className={lbl}>Initial Password *</label>
               <input type="text" value={password} onChange={e => setPassword(e.target.value)} autoComplete="off" className={inp} />
-              <p className="text-xs text-muted mt-1">Share this with the user — they can change it later from their profile.</p>
             </div>
           )}
 
@@ -170,6 +248,7 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editUser, setEditUser] = useState<AppUser | null>(null);
+  const [deleteUser, setDeleteUser] = useState<AppUser | null>(null);
 
   const fetchUsers = useCallback(async () => {
     const res = await fetch("/api/admin/users");
@@ -222,9 +301,13 @@ export default function UsersPage() {
                   <span className={`text-xs px-3 py-1.5 rounded-full font-medium ${roleColors[u.role]}`}>
                     {roleLabels[u.role] || u.role}
                   </span>
-                  <button onClick={() => { setEditUser(u); setShowForm(true); }}
+                  <button onClick={() => { setEditUser(u); setShowForm(true); }} title="Edit"
                     className="p-2 text-muted hover:text-gold hover:bg-gold/10 rounded-lg transition-colors">
                     <Edit className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => setDeleteUser(u)} title="Delete"
+                    className="p-2 text-muted hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
@@ -233,19 +316,19 @@ export default function UsersPage() {
         </div>
       )}
 
-      <div className="bg-paper-soft border border-ink/10 rounded-2xl p-5 flex gap-3 text-sm text-ink-soft">
-        <ShieldCheck className="w-5 h-5 text-gold flex-shrink-0 mt-0.5" />
-        <div>
-          <p className="font-medium text-ink">Only Boss / Super Admin can see this page.</p>
-          <p className="text-muted mt-1">Staff can manage bookings, fleet, drivers and compliance, but never see Finance, Reports, or this Users page.</p>
-        </div>
-      </div>
-
       {showForm && (
         <UserForm
           user={editUser}
           onClose={() => setShowForm(false)}
           onSave={() => { fetchUsers(); setShowForm(false); }}
+        />
+      )}
+
+      {deleteUser && (
+        <DeleteUserModal
+          user={deleteUser}
+          onClose={() => setDeleteUser(null)}
+          onDeleted={() => { fetchUsers(); setDeleteUser(null); }}
         />
       )}
     </div>

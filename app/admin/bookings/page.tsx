@@ -1,7 +1,8 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Plus, CalendarCheck, Search, Eye, AlertTriangle, Trash2, FileText, Banknote, Edit, Users } from "lucide-react";
+import { Plus, CalendarCheck, Search, Eye, AlertTriangle, Trash2, FileText, Banknote, Edit, Users, X, Car, Printer } from "lucide-react";
+import BookingDocuments from "@/components/BookingDocuments";
 import { REGIONS, getLocations } from "@/lib/regions";
 
 const SERVICE_TYPES = [
@@ -23,9 +24,18 @@ const daysBetween = (from: string, to: Date = new Date()) => {
 
 const getTotalCost = (b: any) => (parseFloat(b.trip_cost) || 0) + (parseFloat(b.owner_payout_amount) || 0);
 
-const getVehicleLabel = (b: any) => {
-  if (b.is_borrowed_vehicle) return b.borrowed_vehicle_desc || "Borrowed vehicle";
-  return b.vehicle_make ? `${b.vehicle_make} ${b.vehicle_model}` : "—";
+const vehicleName = (bv: any) =>
+  bv.is_borrowed
+    ? (bv.borrowed_vehicle_desc || "Borrowed vehicle")
+    : [bv.vehicle_make, bv.vehicle_model].filter(Boolean).join(" ") || "Vehicle";
+
+// A job can run on several cars. Show the one name when there's one, a count
+// when there are more.
+const fleetSummary = (b: any) => {
+  const list = b.vehicles || [];
+  if (list.length === 0) return "—";
+  if (list.length === 1) return vehicleName(list[0]);
+  return `${list.length} vehicles`;
 };
 
 type Stage = "confirmed" | "invoiced" | "overdue" | "completed" | "cancelled";
@@ -59,38 +69,62 @@ function StageBadge({ booking }: { booking: any }) {
   );
 }
 
+const inp = "w-full border border-ink/15 bg-paper text-ink px-3 py-2.5 rounded-lg text-sm outline-none focus:border-gold transition-colors";
+const sel = "w-full border border-ink/15 bg-paper text-ink px-3 py-2.5 rounded-lg text-sm outline-none focus:border-gold";
+const lbl = "block text-xs tracking-widest uppercase text-muted mb-1.5 font-medium";
+
+// ── RECORD INVOICE ───────────────────────────────────────────────
 function RecordInvoiceModal({ booking, onClose, onSave }: {
   booking: any; onClose: () => void; onSave: () => void;
 }) {
   const [invoiceNumber, setInvoiceNumber] = useState(booking.invoice_number || "");
   const [invoiceDate, setInvoiceDate] = useState(booking.invoice_date?.split("T")[0] || new Date().toISOString().split("T")[0]);
   const [tripAmount, setTripAmount] = useState(booking.paid_amount?.toString() || "");
-  const [kmTravelled, setKmTravelled] = useState(booking.km_travelled?.toString() || "");
-  const [fuelRate, setFuelRate] = useState("");
-  const [fuelCost, setFuelCost] = useState("");
-  const [driverAllowance, setDriverAllowance] = useState("");
-  const [emergencyCost, setEmergencyCost] = useState("");
-  const [emergencyNotes, setEmergencyNotes] = useState("");
   const [tripNotes, setTripNotes] = useState(booking.trip_notes || "");
-  const [payoutType, setPayoutType] = useState<"percent" | "fixed">(booking.borrowed_payout_type === "percent" ? "percent" : "fixed");
-  const [payoutPercent, setPayoutPercent] = useState(booking.borrowed_payout_percent?.toString() || "");
-  const [payoutFixed, setPayoutFixed] = useState(booking.borrowed_payout_fixed?.toString() || "");
+  const [rows, setRows] = useState<any[]>(
+    (booking.vehicles || []).map((v: any) => ({
+      ...v,
+      fuel_rate: "",
+      km_travelled: v.km_travelled?.toString() || "",
+      fuel_cost: v.fuel_cost ? String(v.fuel_cost) : "",
+      driver_allowance: v.driver_allowance ? String(v.driver_allowance) : "",
+      emergency_cost: v.emergency_cost ? String(v.emergency_cost) : "",
+      emergency_notes: v.emergency_notes || "",
+      borrowed_payout_type: v.borrowed_payout_type === "percent" ? "percent" : "fixed",
+      borrowed_payout_percent: v.borrowed_payout_percent ? String(v.borrowed_payout_percent) : "",
+      borrowed_payout_fixed: v.borrowed_payout_fixed ? String(v.borrowed_payout_fixed) : "",
+    }))
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   const isOutsideDSM = booking.dropoff_region !== "Dar es Salaam";
-  const isBorrowed = !!booking.is_borrowed_vehicle;
-  const ownerPayout = !isBorrowed ? 0
-    : payoutType === "percent" ? (parseFloat(tripAmount) || 0) * ((parseFloat(payoutPercent) || 0) / 100)
-    : (parseFloat(payoutFixed) || 0);
+  const amount = parseFloat(tripAmount) || 0;
+  const perVehicleShare = rows.length > 0 ? amount / rows.length : amount;
 
-  const totalTripCost = (parseFloat(fuelCost)||0) + (parseFloat(driverAllowance)||0) + (parseFloat(emergencyCost)||0);
-  const zuriNet = (parseFloat(tripAmount)||0) - totalTripCost - ownerPayout;
+  const setRow = (i: number, patch: any) =>
+    setRows(prev => prev.map((r, idx) => idx === i ? { ...r, ...patch } : r));
 
-  const applyFuelRate = () => {
-    const km = parseFloat(kmTravelled) || 0;
-    const rate = parseFloat(fuelRate) || 0;
-    if (km > 0 && rate > 0) setFuelCost((km * rate).toString());
+  const payoutOf = (r: any) => {
+    if (!r.is_borrowed) return 0;
+    if (r.borrowed_payout_type === "percent") {
+      return perVehicleShare * ((parseFloat(r.borrowed_payout_percent) || 0) / 100);
+    }
+    return parseFloat(r.borrowed_payout_fixed) || 0;
+  };
+
+  const costOf = (r: any) =>
+    (parseFloat(r.fuel_cost) || 0) + (parseFloat(r.driver_allowance) || 0) +
+    (parseFloat(r.emergency_cost) || 0) + payoutOf(r);
+
+  const totalCost = rows.reduce((s, r) => s + costOf(r), 0);
+  const zuriNet = amount - totalCost;
+
+  const applyFuelRate = (i: number) => {
+    const r = rows[i];
+    const km = parseFloat(r.km_travelled) || 0;
+    const rate = parseFloat(r.fuel_rate) || 0;
+    if (km > 0 && rate > 0) setRow(i, { fuel_cost: String(km * rate) });
   };
 
   const handleSave = async () => {
@@ -103,16 +137,9 @@ function RecordInvoiceModal({ booking, onClose, onSave }: {
         id: booking.id,
         invoice_number: invoiceNumber,
         invoice_date: invoiceDate,
-        paid_amount: parseFloat(tripAmount) || 0,
-        km_travelled: kmTravelled ? parseFloat(kmTravelled) : null,
-        fuel_cost: parseFloat(fuelCost) || 0,
-        driver_allowance: parseFloat(driverAllowance) || 0,
-        emergency_cost: parseFloat(emergencyCost) || 0,
-        emergency_notes: emergencyNotes,
+        paid_amount: amount,
         trip_notes: tripNotes,
-        borrowed_payout_type: isBorrowed ? payoutType : null,
-        borrowed_payout_percent: isBorrowed && payoutType === "percent" ? parseFloat(payoutPercent) || 0 : null,
-        borrowed_payout_fixed: isBorrowed && payoutType === "fixed" ? parseFloat(payoutFixed) || 0 : null,
+        vehicles: rows,
       }),
     });
     if (!res.ok) {
@@ -125,15 +152,12 @@ function RecordInvoiceModal({ booking, onClose, onSave }: {
     onSave();
   };
 
-  const inp = "w-full border border-ink/15 bg-paper text-ink px-3 py-2.5 rounded-lg text-sm outline-none focus:border-gold transition-colors";
-  const lbl = "block text-xs tracking-widest uppercase text-muted mb-1.5 font-medium";
-
   return (
     <div className="fixed inset-0 z-50 bg-ink/60 flex items-center justify-center p-4">
-      <div className="bg-paper rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+      <div className="bg-paper rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="px-6 py-4 border-b border-ink/10 flex items-center justify-between sticky top-0 bg-paper z-10">
           <div>
-            <h2 className="font-display text-xl font-medium">Record Invoice & Costs</h2>
+            <h2 className="font-display text-xl font-medium">Record Invoice &amp; Costs</h2>
             <p className="text-xs text-gold font-mono mt-0.5">{booking.booking_ref}</p>
           </div>
           <button onClick={onClose} className="text-muted hover:text-ink text-xl">✕</button>
@@ -143,21 +167,12 @@ function RecordInvoiceModal({ booking, onClose, onSave }: {
           <div className="grid grid-cols-2 gap-2">
             <div><span className="text-muted">Customer:</span> <span className="font-medium">{booking.customer_name}</span></div>
             <div><span className="text-muted">Service:</span> <span className="font-medium">{getServiceLabel(booking.service_type)}</span></div>
-            <div><span className="text-muted">Vehicle:</span> <span className="font-medium">{getVehicleLabel(booking)}</span></div>
-            <div><span className="text-muted">Driver:</span> <span className="font-medium">{booking.driver_name}</span></div>
             <div><span className="text-muted">From:</span> <span className="font-medium">{booking.pickup_location}, {booking.pickup_region}</span></div>
             <div><span className="text-muted">To:</span> <span className="font-medium">{booking.dropoff_location}, {booking.dropoff_region}</span></div>
           </div>
           {isOutsideDSM && (
             <div className="mt-2 bg-amber-50 text-amber-700 px-3 py-1.5 rounded-lg">
-              ⚠️ Outside Dar es Salaam — driver allowance applies
-            </div>
-          )}
-          {isBorrowed && (
-            <div className="mt-2 bg-purple-50 text-purple-700 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
-              <Users className="w-3.5 h-3.5 flex-shrink-0" />
-              Borrowed from {booking.borrowed_owner_name || "owner"}
-              {booking.borrowed_owner_phone ? ` · ${booking.borrowed_owner_phone}` : ""}
+              Outside Dar es Salaam — driver allowance applies
             </div>
           )}
         </div>
@@ -170,7 +185,7 @@ function RecordInvoiceModal({ booking, onClose, onSave }: {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className={lbl}>Invoice Number *</label>
-                <input value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} autoComplete="off" className={inp} placeholder="e.g. INV-2026-014" />
+                <input value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} autoComplete="off" className={inp} />
               </div>
               <div>
                 <label className={lbl}>Invoice Date *</label>
@@ -184,124 +199,127 @@ function RecordInvoiceModal({ booking, onClose, onSave }: {
           </div>
 
           <div>
-            <p className="text-xs tracking-widest uppercase text-gold font-medium mb-3">Trip Costs</p>
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={lbl}>Km Travelled</label>
-                  <input type="number" value={kmTravelled} onChange={e => setKmTravelled(e.target.value)} onBlur={applyFuelRate} autoComplete="off" className={inp} placeholder="0" />
-                </div>
-                <div>
-                  <label className={lbl}>Fuel Rate / Km (optional)</label>
-                  <input type="number" value={fuelRate} onChange={e => setFuelRate(e.target.value)} onBlur={applyFuelRate} autoComplete="off" className={inp} placeholder="e.g. 800" />
-                </div>
-              </div>
-              <div>
-                <label className={lbl}>
-                  ⛽ Fuel Cost (TZS) *
-                  <span className="ml-2 text-muted normal-case font-normal">auto-fills from km × rate, or enter directly</span>
-                </label>
-                <input type="number" value={fuelCost} onChange={e => setFuelCost(e.target.value)} autoComplete="off" className={inp} placeholder="Enter fuel cost" />
-              </div>
-              <div>
-                <label className={lbl}>
-                  🧍 Driver Allowance (TZS)
-                  {!isOutsideDSM
-                    ? <span className="ml-2 text-green-600 normal-case font-normal">· Within DSM — not required</span>
-                    : <span className="ml-2 text-amber-600 normal-case font-normal">· Outside DSM — enter amount</span>
-                  }
-                </label>
-                <input type="number" value={driverAllowance} onChange={e => setDriverAllowance(e.target.value)}
-                  autoComplete="off" className={inp}
-                  placeholder={isOutsideDSM ? "Enter driver allowance" : "0 — trip within Dar es Salaam"} />
-              </div>
+            <p className="text-xs tracking-widest uppercase text-gold font-medium mb-3">
+              Costs per Vehicle {rows.length > 1 && <span className="text-muted normal-case tracking-normal font-normal">· {rows.length} vehicles</span>}
+            </p>
 
-              {isBorrowed && (
-                <div className="border border-purple-200 rounded-xl p-4 bg-purple-50">
-                  <label className={lbl}>
-                    👤 Vehicle Owner Payment (TZS)
-                    <span className="ml-2 text-purple-600 normal-case font-normal">· what you agreed with {booking.borrowed_owner_name || "the owner"}</span>
-                  </label>
-                  <div className="flex gap-2 mb-2">
-                    <button type="button" onClick={() => setPayoutType("fixed")}
-                      className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium border ${
-                        payoutType === "fixed" ? "bg-purple-600 text-white border-purple-600" : "bg-paper text-muted border-ink/15"
-                      }`}>
-                      Agreed amount
-                    </button>
-                    <button type="button" onClick={() => setPayoutType("percent")}
-                      className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium border ${
-                        payoutType === "percent" ? "bg-purple-600 text-white border-purple-600" : "bg-paper text-muted border-ink/15"
-                      }`}>
-                      Percentage
-                    </button>
-                  </div>
-                  {payoutType === "fixed" ? (
-                    <input type="number" value={payoutFixed} onChange={e => setPayoutFixed(e.target.value)} autoComplete="off" className={inp} placeholder="Amount in TZS" />
-                  ) : (
-                    <>
-                      <input type="number" value={payoutPercent} onChange={e => setPayoutPercent(e.target.value)} autoComplete="off" className={inp} placeholder="e.g. 50" />
-                      {ownerPayout > 0 && (
-                        <p className="text-xs text-purple-700 mt-1.5">
-                          = {ownerPayout.toLocaleString()} TZS of the {(parseFloat(tripAmount)||0).toLocaleString()} invoice
-                        </p>
+            {rows.length === 0 ? (
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm px-4 py-3 rounded-xl">
+                No vehicles on this booking.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {rows.map((r, i) => (
+                  <div key={r.id || i} className={`rounded-xl border p-4 space-y-3 ${r.is_borrowed ? "border-purple-200 bg-purple-50/40" : "border-ink/10 bg-paper-soft"}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        {r.is_borrowed ? <Users className="w-4 h-4 text-purple-600" /> : <Car className="w-4 h-4 text-ink/50" />}
+                        <span className="text-sm font-semibold text-ink">{vehicleName(r)}</span>
+                        {r.plate_number && <span className="text-xs text-muted font-mono">{r.plate_number}</span>}
+                      </div>
+                      <span className="text-xs text-muted">{r.driver_name || "No driver"}</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className={lbl}>Km</label>
+                        <input type="number" value={r.km_travelled} onChange={e => setRow(i, { km_travelled: e.target.value })} onBlur={() => applyFuelRate(i)} autoComplete="off" className={inp} />
+                      </div>
+                      <div>
+                        <label className={lbl}>Rate / Km</label>
+                        <input type="number" value={r.fuel_rate} onChange={e => setRow(i, { fuel_rate: e.target.value })} onBlur={() => applyFuelRate(i)} autoComplete="off" className={inp} />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className={lbl}>⛽ Fuel</label>
+                        <input type="number" value={r.fuel_cost} onChange={e => setRow(i, { fuel_cost: e.target.value })} autoComplete="off" className={inp} />
+                      </div>
+                      <div>
+                        <label className={lbl}>🧍 Allowance</label>
+                        <input type="number" value={r.driver_allowance} onChange={e => setRow(i, { driver_allowance: e.target.value })} autoComplete="off" className={inp} />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className={lbl}>🚨 Emergency</label>
+                        <input type="number" value={r.emergency_cost} onChange={e => setRow(i, { emergency_cost: e.target.value })} autoComplete="off" className={inp} />
+                      </div>
+                      {parseFloat(r.emergency_cost) > 0 && (
+                        <div>
+                          <label className={lbl}>What happened</label>
+                          <input value={r.emergency_notes} onChange={e => setRow(i, { emergency_notes: e.target.value })} autoComplete="off" className={inp} />
+                        </div>
                       )}
-                    </>
-                  )}
-                </div>
-              )}
+                    </div>
 
-              <div className="border border-ink/10 rounded-xl p-4 bg-paper-soft">
-                <label className={lbl}>
-                  🚨 Emergency Cost (TZS)
-                  <span className="ml-2 text-muted normal-case font-normal">· only if something happened on the road</span>
-                </label>
-                <input type="number" value={emergencyCost} onChange={e => setEmergencyCost(e.target.value)}
-                  autoComplete="off" className={inp} placeholder="Leave empty if no emergency" />
-                {parseFloat(emergencyCost) > 0 && (
-                  <div className="mt-2">
-                    <label className={lbl}>What happened?</label>
-                    <input value={emergencyNotes} onChange={e => setEmergencyNotes(e.target.value)}
-                      autoComplete="off" className={inp} placeholder="Fine, breakdown, accident..." />
+                    {r.is_borrowed && (
+                      <div className="pt-1">
+                        <label className={lbl}>👤 Owner Payment {r.borrowed_owner_name ? `· ${r.borrowed_owner_name}` : ""}</label>
+                        <div className="flex gap-2 mb-2">
+                          <button type="button" onClick={() => setRow(i, { borrowed_payout_type: "fixed" })}
+                            className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium border ${r.borrowed_payout_type === "fixed" ? "bg-purple-600 text-white border-purple-600" : "bg-paper text-muted border-ink/15"}`}>
+                            Amount
+                          </button>
+                          <button type="button" onClick={() => setRow(i, { borrowed_payout_type: "percent" })}
+                            className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium border ${r.borrowed_payout_type === "percent" ? "bg-purple-600 text-white border-purple-600" : "bg-paper text-muted border-ink/15"}`}>
+                            Percent
+                          </button>
+                        </div>
+                        {r.borrowed_payout_type === "fixed" ? (
+                          <input type="number" value={r.borrowed_payout_fixed} onChange={e => setRow(i, { borrowed_payout_fixed: e.target.value })} autoComplete="off" className={inp} />
+                        ) : (
+                          <>
+                            <input type="number" value={r.borrowed_payout_percent} onChange={e => setRow(i, { borrowed_payout_percent: e.target.value })} autoComplete="off" className={inp} placeholder="50" />
+                            {payoutOf(r) > 0 && (
+                              <p className="text-xs text-purple-700 mt-1.5">
+                                = {Math.round(payoutOf(r)).toLocaleString()} of {Math.round(perVehicleShare).toLocaleString()} share
+                              </p>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex justify-between text-xs pt-1 border-t border-ink/10">
+                      <span className="text-muted">Vehicle cost</span>
+                      <span className="text-red-500 font-medium">-{Math.round(costOf(r)).toLocaleString()} TZS</span>
+                    </div>
                   </div>
-                )}
+                ))}
               </div>
-            </div>
+            )}
           </div>
 
           <div className={`rounded-xl p-4 border ${zuriNet >= 0 ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
-            <p className="text-xs tracking-widest uppercase font-medium mb-3 text-muted">Zuri Net (this trip)</p>
+            <p className="text-xs tracking-widest uppercase font-medium mb-3 text-muted">Zuri Net</p>
             <div className="space-y-1.5 text-sm">
-              <div className="flex justify-between"><span className="text-muted">Invoiced amount</span><span className="text-green-600 font-medium">+{(parseFloat(tripAmount)||0).toLocaleString()} TZS</span></div>
-              <div className="flex justify-between"><span className="text-muted">⛽ Fuel</span><span className="text-red-500">-{(parseFloat(fuelCost)||0).toLocaleString()} TZS</span></div>
-              {parseFloat(driverAllowance) > 0 && <div className="flex justify-between"><span className="text-muted">🧍 Allowance</span><span className="text-red-500">-{(parseFloat(driverAllowance)||0).toLocaleString()} TZS</span></div>}
-              {isBorrowed && ownerPayout > 0 && (
-                <div className="flex justify-between">
-                  <span className="text-muted">👤 Vehicle owner{payoutType === "percent" ? ` (${payoutPercent}%)` : ""}</span>
-                  <span className="text-red-500">-{ownerPayout.toLocaleString()} TZS</span>
+              <div className="flex justify-between"><span className="text-muted">Invoiced</span><span className="text-green-600 font-medium">+{amount.toLocaleString()} TZS</span></div>
+              {rows.map((r, i) => (
+                <div key={r.id || i} className="flex justify-between">
+                  <span className="text-muted">{vehicleName(r)}</span>
+                  <span className="text-red-500">-{Math.round(costOf(r)).toLocaleString()} TZS</span>
                 </div>
-              )}
-              {parseFloat(emergencyCost) > 0 && <div className="flex justify-between"><span className="text-muted">🚨 Emergency</span><span className="text-red-500">-{(parseFloat(emergencyCost)||0).toLocaleString()} TZS</span></div>}
+              ))}
               <div className="flex justify-between border-t border-ink/10 pt-2 mt-1">
                 <span className="font-semibold">{zuriNet >= 0 ? "Net Profit" : "Net Loss"}</span>
-                <span className={`font-bold text-base ${zuriNet >= 0 ? "text-green-600" : "text-red-600"}`}>{zuriNet >= 0 ? "+" : ""}{zuriNet.toLocaleString()} TZS</span>
+                <span className={`font-bold text-base ${zuriNet >= 0 ? "text-green-600" : "text-red-600"}`}>{zuriNet >= 0 ? "+" : ""}{Math.round(zuriNet).toLocaleString()} TZS</span>
               </div>
             </div>
           </div>
 
           <div>
-            <label className={lbl}>Trip Notes (optional)</label>
+            <label className={lbl}>Trip Notes</label>
             <textarea value={tripNotes} onChange={e => setTripNotes(e.target.value)} rows={2}
-              placeholder="Any notes about this trip..."
               className="w-full border border-ink/15 bg-paper text-ink px-3 py-2.5 rounded-lg text-sm outline-none focus:border-gold resize-none" />
           </div>
-
-          <p className="text-xs text-muted">This just records the invoice you've already written outside the system. Waiting for payment is tracked automatically — you'll mark it paid separately once the customer settles.</p>
         </div>
 
-        <div className="px-6 py-4 border-t border-ink/10 flex gap-3 justify-end">
+        <div className="px-6 py-4 border-t border-ink/10 flex gap-3 justify-end sticky bottom-0 bg-paper">
           <button onClick={onClose} className="px-5 py-2.5 text-sm text-muted border border-ink/15 rounded-xl">Cancel</button>
-          <button onClick={handleSave} disabled={saving || !invoiceNumber || !invoiceDate || !tripAmount || !fuelCost}
+          <button onClick={handleSave} disabled={saving || !invoiceNumber || !invoiceDate || !tripAmount}
             className="px-5 py-2.5 text-sm bg-gold text-ink rounded-xl font-medium hover:bg-gold/90 disabled:opacity-50">
             {saving ? "Saving..." : "Save Invoice"}
           </button>
@@ -311,6 +329,7 @@ function RecordInvoiceModal({ booking, onClose, onSave }: {
   );
 }
 
+// ── MARK PAID ────────────────────────────────────────────────────
 function MarkPaidModal({ booking, onClose, onSave }: { booking: any; onClose: () => void; onSave: () => void }) {
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split("T")[0]);
@@ -335,9 +354,7 @@ function MarkPaidModal({ booking, onClose, onSave }: { booking: any; onClose: ()
     onSave();
   };
 
-  const inp = "w-full border border-ink/15 bg-paper text-ink px-3 py-2.5 rounded-lg text-sm outline-none focus:border-gold transition-colors";
-  const sel = "w-full border border-ink/15 bg-paper text-ink px-3 py-2.5 rounded-lg text-sm outline-none focus:border-gold";
-  const lbl = "block text-xs tracking-widest uppercase text-muted mb-1.5 font-medium";
+  const owed = parseFloat(booking.owner_payout_amount) || 0;
 
   return (
     <div className="fixed inset-0 z-50 bg-ink/60 flex items-center justify-center p-4">
@@ -352,17 +369,17 @@ function MarkPaidModal({ booking, onClose, onSave }: { booking: any; onClose: ()
         <div className="p-6 space-y-4">
           {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-xl">{error}</div>}
           <div className="bg-paper-soft border border-ink/10 rounded-xl px-4 py-3 text-sm flex justify-between">
-            <span className="text-muted">Invoiced amount</span>
+            <span className="text-muted">Invoiced</span>
             <span className="font-semibold text-ink">{(parseFloat(booking.paid_amount)||0).toLocaleString()} TZS</span>
           </div>
-          {parseFloat(booking.owner_payout_amount) > 0 && (
+          {owed > 0 && (
             <div className="bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 text-sm flex justify-between">
-              <span className="text-purple-700">Owed to {booking.borrowed_owner_name || "vehicle owner"}</span>
-              <span className="font-semibold text-purple-700">{parseFloat(booking.owner_payout_amount).toLocaleString()} TZS</span>
+              <span className="text-purple-700">Owed to vehicle owners</span>
+              <span className="font-semibold text-purple-700">{Math.round(owed).toLocaleString()} TZS</span>
             </div>
           )}
           <div>
-            <label className={lbl}>Payment Method</label>
+            <label className={lbl}>Method</label>
             <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className={sel}>
               <option value="cash">Cash</option>
               <option value="bank_transfer">Bank Transfer</option>
@@ -373,7 +390,6 @@ function MarkPaidModal({ booking, onClose, onSave }: { booking: any; onClose: ()
             <label className={lbl}>Date Received</label>
             <input type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className={inp} />
           </div>
-          <p className="text-xs text-muted">This closes the job — the booking will move to Completed.</p>
         </div>
         <div className="px-6 py-4 border-t border-ink/10 flex gap-3 justify-end">
           <button onClick={onClose} className="px-5 py-2.5 text-sm text-muted border border-ink/15 rounded-xl">Cancel</button>
@@ -387,14 +403,18 @@ function MarkPaidModal({ booking, onClose, onSave }: { booking: any; onClose: ()
   );
 }
 
+// ── VIEW ─────────────────────────────────────────────────────────
 function ViewBookingModal({ booking, onClose }: { booking: any; onClose: () => void }) {
-  const tripCost = parseFloat(booking.trip_cost) || 0;
-  const ownerPayout = parseFloat(booking.owner_payout_amount) || 0;
   const paidAmount = parseFloat(booking.paid_amount) || 0;
-  const tripProfit = paidAmount - tripCost - ownerPayout;
+  const cost = getTotalCost(booking);
+  const tripProfit = paidAmount - cost;
   const stage = getStage(booking);
   const daysOutstanding = (stage === "invoiced" || stage === "overdue") ? daysBetween(booking.invoice_date) : null;
-  const isBorrowed = !!booking.is_borrowed_vehicle;
+  const list = booking.vehicles || [];
+
+  const costOf = (bv: any) =>
+    (parseFloat(bv.fuel_cost) || 0) + (parseFloat(bv.driver_allowance) || 0) +
+    (parseFloat(bv.emergency_cost) || 0) + (parseFloat(bv.owner_payout_amount) || 0);
 
   return (
     <div className="fixed inset-0 z-50 bg-ink/60 flex items-center justify-center p-4">
@@ -410,11 +430,6 @@ function ViewBookingModal({ booking, onClose }: { booking: any; onClose: () => v
           <div className="flex items-center gap-3 flex-wrap">
             <StageBadge booking={booking} />
             <span className="text-xs text-muted">{getServiceLabel(booking.service_type)}</span>
-            {isBorrowed && (
-              <span className="text-xs px-2 py-1 rounded-full font-medium bg-purple-100 text-purple-700 flex items-center gap-1">
-                <Users className="w-3 h-3" /> Borrowed vehicle
-              </span>
-            )}
           </div>
 
           <div>
@@ -426,33 +441,51 @@ function ViewBookingModal({ booking, onClose }: { booking: any; onClose: () => v
           <div>
             <p className="text-xs tracking-widest uppercase text-gold font-medium mb-2">Trip</p>
             <div className="space-y-1.5 text-sm">
-              <div className="flex gap-2"><span className="text-muted w-20">From:</span><span>{booking.pickup_location}, {booking.pickup_region}</span></div>
-              <div className="flex gap-2"><span className="text-muted w-20">To:</span><span>{booking.dropoff_location}, {booking.dropoff_region}</span></div>
-              <div className="flex gap-2"><span className="text-muted w-20">Date:</span><span>{booking.pickup_datetime ? new Date(booking.pickup_datetime).toLocaleString("en-TZ") : "—"}</span></div>
-              <div className="flex gap-2"><span className="text-muted w-20">Vehicle:</span><span>{getVehicleLabel(booking)}</span></div>
-              <div className="flex gap-2"><span className="text-muted w-20">Driver:</span><span>{booking.driver_name}</span></div>
-              {booking.km_travelled && <div className="flex gap-2"><span className="text-muted w-20">Distance:</span><span>{parseFloat(booking.km_travelled).toLocaleString()} km</span></div>}
+              <div className="flex gap-2"><span className="text-muted w-16">From:</span><span>{booking.pickup_location}, {booking.pickup_region}</span></div>
+              <div className="flex gap-2"><span className="text-muted w-16">To:</span><span>{booking.dropoff_location}, {booking.dropoff_region}</span></div>
+              <div className="flex gap-2"><span className="text-muted w-16">Date:</span><span>{booking.pickup_datetime ? new Date(booking.pickup_datetime).toLocaleString("en-TZ") : "—"}</span></div>
             </div>
           </div>
 
-          {isBorrowed && (
-            <div>
-              <p className="text-xs tracking-widest uppercase text-gold font-medium mb-2">Borrowed Vehicle</p>
-              <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 space-y-1.5 text-sm">
-                <div className="flex justify-between"><span className="text-muted">Vehicle</span><span className="text-ink">{booking.borrowed_vehicle_desc || "—"}</span></div>
-                <div className="flex justify-between"><span className="text-muted">Owner</span><span className="text-ink">{booking.borrowed_owner_name || "—"}</span></div>
-                <div className="flex justify-between"><span className="text-muted">Phone</span><span className="text-ink">{booking.borrowed_owner_phone || "—"}</span></div>
-                {ownerPayout > 0 && (
-                  <div className="flex justify-between border-t border-purple-200 pt-1.5 mt-1">
-                    <span className="text-purple-700 font-medium">
-                      Payout{booking.borrowed_payout_type === "percent" ? ` (${parseFloat(booking.borrowed_payout_percent || 0)}%)` : ""}
-                    </span>
-                    <span className="text-purple-700 font-semibold">{ownerPayout.toLocaleString()} TZS</span>
+          <div>
+            <p className="text-xs tracking-widest uppercase text-gold font-medium mb-2">
+              Vehicles {list.length > 1 && <span className="text-muted font-normal">· {list.length}</span>}
+            </p>
+            <div className="space-y-2">
+              {list.length === 0 ? (
+                <p className="text-sm text-muted">None assigned.</p>
+              ) : list.map((bv: any, i: number) => (
+                <div key={bv.id || i} className={`rounded-xl border p-3 ${bv.is_borrowed ? "border-purple-200 bg-purple-50/40" : "border-ink/10 bg-paper-soft"}`}>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      {bv.is_borrowed ? <Users className="w-3.5 h-3.5 text-purple-600" /> : <Car className="w-3.5 h-3.5 text-ink/50" />}
+                      <span className="text-sm font-medium text-ink">{vehicleName(bv)}</span>
+                      {bv.plate_number && <span className="text-xs text-muted font-mono">{bv.plate_number}</span>}
+                    </div>
+                    <span className="text-xs text-muted">{bv.driver_name || "—"}</span>
                   </div>
-                )}
-              </div>
+                  {bv.is_borrowed && bv.borrowed_owner_name && (
+                    <div className="text-xs text-purple-700 mt-1">
+                      Owner: {bv.borrowed_owner_name}{bv.borrowed_owner_phone ? ` · ${bv.borrowed_owner_phone}` : ""}
+                    </div>
+                  )}
+                  {booking.invoice_number && (
+                    <div className="mt-2 pt-2 border-t border-ink/10 grid grid-cols-2 gap-1 text-xs">
+                      {bv.km_travelled && <div><span className="text-muted">Km:</span> {parseFloat(bv.km_travelled).toLocaleString()}</div>}
+                      <div><span className="text-muted">Fuel:</span> {(parseFloat(bv.fuel_cost)||0).toLocaleString()}</div>
+                      {parseFloat(bv.driver_allowance) > 0 && <div><span className="text-muted">Allowance:</span> {parseFloat(bv.driver_allowance).toLocaleString()}</div>}
+                      {parseFloat(bv.emergency_cost) > 0 && <div><span className="text-muted">Emergency:</span> {parseFloat(bv.emergency_cost).toLocaleString()}</div>}
+                      {parseFloat(bv.owner_payout_amount) > 0 && <div><span className="text-muted">Owner:</span> {Math.round(parseFloat(bv.owner_payout_amount)).toLocaleString()}</div>}
+                      <div className="col-span-2 pt-1 flex justify-between font-medium">
+                        <span className="text-muted">Total</span>
+                        <span className="text-red-500">-{Math.round(costOf(bv)).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
-          )}
+          </div>
 
           {booking.travel_details && (
             <div>
@@ -464,20 +497,14 @@ function ViewBookingModal({ booking, onClose }: { booking: any; onClose: () => v
           {booking.invoice_number && (
             <>
               <div>
-                <p className="text-xs tracking-widest uppercase text-gold font-medium mb-2">Zuri Net (this trip)</p>
+                <p className="text-xs tracking-widest uppercase text-gold font-medium mb-2">Zuri Net</p>
                 <div className={`rounded-xl p-4 border ${tripProfit >= 0 ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
                   <div className="space-y-1.5 text-sm">
-                    <div className="flex justify-between"><span className="text-muted">Invoiced amount</span><span className="text-green-600 font-medium">+{paidAmount.toLocaleString()} TZS</span></div>
-                    <div className="flex justify-between"><span className="text-muted">Trip costs (fuel + allowance + emergency)</span><span className="text-red-500">-{tripCost.toLocaleString()} TZS</span></div>
-                    {ownerPayout > 0 && (
-                      <div className="flex justify-between"><span className="text-muted">👤 Vehicle owner</span><span className="text-red-500">-{ownerPayout.toLocaleString()} TZS</span></div>
-                    )}
-                    {parseFloat(booking.emergency_cost) > 0 && (
-                      <div className="flex justify-between text-xs"><span className="text-muted">🚨 Emergency: {booking.emergency_notes}</span><span className="text-red-400">-{parseFloat(booking.emergency_cost).toLocaleString()}</span></div>
-                    )}
+                    <div className="flex justify-between"><span className="text-muted">Invoiced</span><span className="text-green-600 font-medium">+{paidAmount.toLocaleString()} TZS</span></div>
+                    <div className="flex justify-between"><span className="text-muted">All vehicle costs</span><span className="text-red-500">-{Math.round(cost).toLocaleString()} TZS</span></div>
                     <div className="flex justify-between border-t border-ink/10 pt-2 mt-1">
                       <span className="font-semibold">{tripProfit >= 0 ? "Net Profit" : "Net Loss"}</span>
-                      <span className={`font-bold ${tripProfit >= 0 ? "text-green-600" : "text-red-600"}`}>{tripProfit >= 0 ? "+" : ""}{tripProfit.toLocaleString()} TZS</span>
+                      <span className={`font-bold ${tripProfit >= 0 ? "text-green-600" : "text-red-600"}`}>{tripProfit >= 0 ? "+" : ""}{Math.round(tripProfit).toLocaleString()} TZS</span>
                     </div>
                   </div>
                 </div>
@@ -486,13 +513,13 @@ function ViewBookingModal({ booking, onClose }: { booking: any; onClose: () => v
               <div>
                 <p className="text-xs tracking-widest uppercase text-gold font-medium mb-2">Payment</p>
                 <div className="bg-paper-soft rounded-xl p-4 border border-ink/10 space-y-1.5 text-sm">
-                  <div className="flex justify-between"><span className="text-muted">Invoice number</span><span className="text-ink">{booking.invoice_number}</span></div>
-                  <div className="flex justify-between"><span className="text-muted">Invoice date</span><span className="text-ink">{new Date(booking.invoice_date).toLocaleDateString("en-TZ")}</span></div>
+                  <div className="flex justify-between"><span className="text-muted">Invoice</span><span className="text-ink">{booking.invoice_number}</span></div>
+                  <div className="flex justify-between"><span className="text-muted">Date</span><span className="text-ink">{new Date(booking.invoice_date).toLocaleDateString("en-TZ")}</span></div>
                   <div className="flex justify-between"><span className="text-muted">Status</span><StageBadge booking={booking} /></div>
                   {stage === "completed" && (
                     <>
                       <div className="flex justify-between"><span className="text-muted">Paid via</span><span className="text-ink capitalize">{booking.payment_method?.replace("_"," ") || "—"}</span></div>
-                      <div className="flex justify-between"><span className="text-muted">Date received</span><span className="text-ink">{booking.payment_received_date ? new Date(booking.payment_received_date).toLocaleDateString("en-TZ") : "—"}</span></div>
+                      <div className="flex justify-between"><span className="text-muted">Received</span><span className="text-ink">{booking.payment_received_date ? new Date(booking.payment_received_date).toLocaleDateString("en-TZ") : "—"}</span></div>
                     </>
                   )}
                   {daysOutstanding !== null && (
@@ -515,20 +542,18 @@ function ViewBookingModal({ booking, onClose }: { booking: any; onClose: () => v
   );
 }
 
+// ── NEW BOOKING ──────────────────────────────────────────────────
 function BookingForm({ onClose, onSave }: { onClose: () => void; onSave: () => void }) {
-  const [vehicles, setVehicles] = useState<any[]>([]);
+  const [fleet, setFleet] = useState<any[]>([]);
   const [drivers, setDrivers] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [serviceType, setServiceType] = useState("car_hire");
-  const [vehicleSource, setVehicleSource] = useState<"fleet" | "borrowed">("fleet");
-  const [vehicleId, setVehicleId] = useState("");
-  const [borrowedDesc, setBorrowedDesc] = useState("");
-  const [borrowedOwnerName, setBorrowedOwnerName] = useState("");
-  const [borrowedOwnerPhone, setBorrowedOwnerPhone] = useState("");
-  const [driverId, setDriverId] = useState("");
+  const [rows, setRows] = useState<any[]>([
+    { source: "fleet", vehicle_id: "", driver_id: "", borrowed_vehicle_desc: "", borrowed_owner_name: "", borrowed_owner_phone: "" },
+  ]);
   const [pickupRegion, setPickupRegion] = useState("");
   const [pickupLocation, setPickupLocation] = useState("");
   const [pickupLocations, setPickupLocations] = useState<string[]>([]);
@@ -545,7 +570,7 @@ function BookingForm({ onClose, onSave }: { onClose: () => void; onSave: () => v
   const [notes, setNotes] = useState("");
 
   useEffect(() => {
-    fetch("/api/admin/vehicles").then(r => r.json()).then(d => setVehicles(d.filter((v: any) => v.status === "available")));
+    fetch("/api/admin/vehicles").then(r => r.json()).then(d => setFleet(d.filter((v: any) => v.status === "available")));
     fetch("/api/admin/drivers").then(r => r.json()).then(d => setDrivers(d));
   }, []);
 
@@ -554,7 +579,19 @@ function BookingForm({ onClose, onSave }: { onClose: () => void; onSave: () => v
   const handleDropRegion = (r: string) => { setDropRegion(r); setDropLocation(""); setDropCustom(false); setDropLocations(r ? getLocations(r) : []); };
   const handleDropLocation = (l: string) => { if (l === "Other (specify below)") { setDropCustom(true); setDropLocation(""); } else { setDropCustom(false); setDropLocation(l); } };
 
-  const isBorrowed = vehicleSource === "borrowed";
+  const setRow = (i: number, patch: any) =>
+    setRows(prev => prev.map((r, idx) => idx === i ? { ...r, ...patch } : r));
+  const addRow = () =>
+    setRows(prev => [...prev, { source: "fleet", vehicle_id: "", driver_id: "", borrowed_vehicle_desc: "", borrowed_owner_name: "", borrowed_owner_phone: "" }]);
+  const removeRow = (i: number) =>
+    setRows(prev => prev.filter((_, idx) => idx !== i));
+
+  // A car already picked on another row shouldn't be selectable twice.
+  const takenIds = rows.map(r => r.vehicle_id).filter(Boolean);
+
+  const rowValid = (r: any) =>
+    r.source === "borrowed" ? !!(r.borrowed_vehicle_desc && r.borrowed_owner_name) : !!r.vehicle_id;
+  const canSave = customerName && rows.length > 0 && rows.every(rowValid);
 
   const handleSave = async () => {
     setSaving(true);
@@ -565,12 +602,14 @@ function BookingForm({ onClose, onSave }: { onClose: () => void; onSave: () => v
         customer_name: customerName, customer_phone: customerPhone,
         customer_email: customerEmail, status: "confirmed",
         service_type: serviceType,
-        vehicle_id: isBorrowed ? null : (vehicleId || null),
-        is_borrowed_vehicle: isBorrowed,
-        borrowed_vehicle_desc: isBorrowed ? borrowedDesc : null,
-        borrowed_owner_name: isBorrowed ? borrowedOwnerName : null,
-        borrowed_owner_phone: isBorrowed ? borrowedOwnerPhone : null,
-        driver_id: driverId || null,
+        vehicles: rows.map(r => ({
+          is_borrowed: r.source === "borrowed",
+          vehicle_id: r.source === "borrowed" ? null : (r.vehicle_id || null),
+          driver_id: r.driver_id || null,
+          borrowed_vehicle_desc: r.source === "borrowed" ? r.borrowed_vehicle_desc : null,
+          borrowed_owner_name: r.source === "borrowed" ? r.borrowed_owner_name : null,
+          borrowed_owner_phone: r.source === "borrowed" ? r.borrowed_owner_phone : null,
+        })),
         pickup_region: pickupRegion, pickup_location: pickupCustom ? pickupCustomText : pickupLocation,
         dropoff_region: dropRegion, dropoff_location: dropCustom ? dropCustomText : dropLocation,
         pickup_datetime: pickupDatetime || null, dropoff_datetime: dropoffDatetime || null,
@@ -581,13 +620,6 @@ function BookingForm({ onClose, onSave }: { onClose: () => void; onSave: () => v
     onSave();
   };
 
-  const inp = "w-full border border-ink/15 bg-paper text-ink px-3 py-2.5 rounded-lg text-sm outline-none focus:border-gold transition-colors";
-  const sel = "w-full border border-ink/15 bg-paper text-ink px-3 py-2.5 rounded-lg text-sm outline-none focus:border-gold";
-  const lbl = "block text-xs tracking-widest uppercase text-muted mb-1.5 font-medium";
-  const selectedVehicle = vehicles.find(v => v.id.toString() === vehicleId);
-
-  const canSave = customerName && (isBorrowed ? borrowedDesc && borrowedOwnerName : true);
-
   return (
     <div className="fixed inset-0 z-50 bg-ink/60 flex items-center justify-center p-4">
       <div className="bg-paper rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -597,129 +629,157 @@ function BookingForm({ onClose, onSave }: { onClose: () => void; onSave: () => v
         </div>
         <div className="p-6 space-y-6">
           <div>
-            <p className="text-xs tracking-widest uppercase text-gold font-medium mb-3">Customer Details</p>
+            <p className="text-xs tracking-widest uppercase text-gold font-medium mb-3">Customer</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div><label className={lbl}>Customer Name *</label><input value={customerName} onChange={e => setCustomerName(e.target.value)} autoComplete="off" className={inp} /></div>
+              <div><label className={lbl}>Name *</label><input value={customerName} onChange={e => setCustomerName(e.target.value)} autoComplete="off" className={inp} /></div>
               <div><label className={lbl}>Phone</label><input value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} autoComplete="off" className={inp} /></div>
               <div className="sm:col-span-2"><label className={lbl}>Email</label><input type="email" value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} autoComplete="off" className={inp} /></div>
             </div>
           </div>
 
           <div>
-            <p className="text-xs tracking-widest uppercase text-gold font-medium mb-3">Service & Assignment</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div><label className={lbl}>Service Type</label>
-                <select value={serviceType} onChange={e => setServiceType(e.target.value)} className={sel}>
-                  {SERVICE_TYPES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-                </select>
-              </div>
-              <div><label className={lbl}>Driver</label>
-                <select value={driverId} onChange={e => setDriverId(e.target.value)} className={sel}>
-                  <option value="">— Select Driver —</option>
-                  {drivers.map(d => <option key={d.id} value={d.id}>{d.full_name}</option>)}
-                </select>
-              </div>
+            <label className={lbl}>Service Type</label>
+            <select value={serviceType} onChange={e => setServiceType(e.target.value)} className={sel}>
+              {SERVICE_TYPES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+          </div>
 
-              <div className="sm:col-span-2">
-                <label className={lbl}>Vehicle</label>
-                <div className="flex gap-2 mb-3">
-                  <button type="button" onClick={() => setVehicleSource("fleet")}
-                    className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-medium transition-all border ${
-                      !isBorrowed ? "bg-ink text-paper border-ink" : "bg-paper text-muted border-ink/15 hover:border-ink/30"
-                    }`}>
-                    From my fleet
-                  </button>
-                  <button type="button" onClick={() => setVehicleSource("borrowed")}
-                    className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-medium transition-all border ${
-                      isBorrowed ? "bg-purple-600 text-white border-purple-600" : "bg-paper text-muted border-ink/15 hover:border-ink/30"
-                    }`}>
-                    Borrowed for this job
-                  </button>
-                </div>
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs tracking-widest uppercase text-gold font-medium">
+                Vehicles &amp; Drivers {rows.length > 1 && <span className="text-muted normal-case tracking-normal font-normal">· {rows.length}</span>}
+              </p>
+              <button type="button" onClick={addRow}
+                className="flex items-center gap-1.5 text-xs bg-ink text-paper px-3 py-1.5 rounded-lg font-medium hover:bg-gold hover:text-ink transition-colors">
+                <Plus className="w-3.5 h-3.5" /> Add
+              </button>
+            </div>
 
-                {!isBorrowed ? (
-                  <>
-                    <select value={vehicleId} onChange={e => setVehicleId(e.target.value)} className={sel}>
-                      <option value="">— Select Vehicle —</option>
-                      {vehicles.map(v => <option key={v.id} value={v.id}>{v.make} {v.model} ({v.seats} seats){v.plate_number ? ` · ${v.plate_number}` : ""}</option>)}
-                    </select>
-                    {selectedVehicle && <p className="text-xs text-gold mt-1">✓ {selectedVehicle.seats} seats available</p>}
-                  </>
-                ) : (
-                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 space-y-3">
-                    <p className="text-xs text-purple-700">
-                      Just for this job — nothing is added to your fleet, and no documents are tracked. What you pay the owner is entered later, with the invoice.
-                    </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="sm:col-span-2">
-                        <label className={lbl}>Vehicle *</label>
-                        <input value={borrowedDesc} onChange={e => setBorrowedDesc(e.target.value)} autoComplete="off" className={inp} placeholder="e.g. Toyota Coaster 26-seat" />
+            <div className="space-y-3">
+              {rows.map((r, i) => {
+                const borrowed = r.source === "borrowed";
+                return (
+                  <div key={i} className={`rounded-xl border p-4 space-y-3 ${borrowed ? "border-purple-200 bg-purple-50/40" : "border-ink/10 bg-paper-soft"}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => setRow(i, { source: "fleet" })}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${!borrowed ? "bg-ink text-paper border-ink" : "bg-paper text-muted border-ink/15"}`}>
+                          My fleet
+                        </button>
+                        <button type="button" onClick={() => setRow(i, { source: "borrowed" })}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${borrowed ? "bg-purple-600 text-white border-purple-600" : "bg-paper text-muted border-ink/15"}`}>
+                          Borrowed
+                        </button>
                       </div>
-                      <div>
-                        <label className={lbl}>Owner Name *</label>
-                        <input value={borrowedOwnerName} onChange={e => setBorrowedOwnerName(e.target.value)} autoComplete="off" className={inp} />
-                      </div>
-                      <div>
-                        <label className={lbl}>Owner Phone</label>
-                        <input value={borrowedOwnerPhone} onChange={e => setBorrowedOwnerPhone(e.target.value)} autoComplete="off" className={inp} />
-                      </div>
+                      {rows.length > 1 && (
+                        <button type="button" onClick={() => removeRow(i)} title="Remove"
+                          className="p-1.5 text-muted hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
+
+                    {!borrowed ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className={lbl}>Vehicle *</label>
+                          <select value={r.vehicle_id} onChange={e => setRow(i, { vehicle_id: e.target.value })} className={sel}>
+                            <option value="">— Select —</option>
+                            {fleet
+                              .filter((v: any) => !takenIds.includes(String(v.id)) || String(v.id) === String(r.vehicle_id))
+                              .map((v: any) => (
+                                <option key={v.id} value={v.id}>
+                                  {v.make} {v.model} ({v.seats}){v.plate_number ? ` · ${v.plate_number}` : ""}
+                                </option>
+                              ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className={lbl}>Driver</label>
+                          <select value={r.driver_id} onChange={e => setRow(i, { driver_id: e.target.value })} className={sel}>
+                            <option value="">— Select —</option>
+                            {drivers.map((d: any) => <option key={d.id} value={d.id}>{d.full_name}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="sm:col-span-2">
+                          <label className={lbl}>Vehicle *</label>
+                          <input value={r.borrowed_vehicle_desc} onChange={e => setRow(i, { borrowed_vehicle_desc: e.target.value })} autoComplete="off" className={inp} placeholder="Toyota Coaster 26-seat" />
+                        </div>
+                        <div>
+                          <label className={lbl}>Owner *</label>
+                          <input value={r.borrowed_owner_name} onChange={e => setRow(i, { borrowed_owner_name: e.target.value })} autoComplete="off" className={inp} />
+                        </div>
+                        <div>
+                          <label className={lbl}>Owner Phone</label>
+                          <input value={r.borrowed_owner_phone} onChange={e => setRow(i, { borrowed_owner_phone: e.target.value })} autoComplete="off" className={inp} />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className={lbl}>Driver</label>
+                          <select value={r.driver_id} onChange={e => setRow(i, { driver_id: e.target.value })} className={sel}>
+                            <option value="">— Select —</option>
+                            {drivers.map((d: any) => <option key={d.id} value={d.id}>{d.full_name}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                );
+              })}
             </div>
           </div>
 
           <div>
-            <p className="text-xs tracking-widest uppercase text-gold font-medium mb-3">Trip Details</p>
+            <p className="text-xs tracking-widest uppercase text-gold font-medium mb-3">Trip</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div><label className={lbl}>Pickup Region</label>
                 <select value={pickupRegion} onChange={e => handlePickupRegion(e.target.value)} className={sel}>
-                  <option value="">— Select Region —</option>
+                  <option value="">— Select —</option>
                   {REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
                 </select>
               </div>
               <div><label className={lbl}>Pickup Location</label>
                 {!pickupRegion ? (
-                  <input disabled placeholder="Select a region first" className="w-full border border-ink/15 bg-paper-soft text-muted px-3 py-2.5 rounded-lg text-sm cursor-not-allowed" />
+                  <input disabled className="w-full border border-ink/15 bg-paper-soft text-muted px-3 py-2.5 rounded-lg text-sm cursor-not-allowed" />
                 ) : (
                   <select value={pickupCustom ? "Other (specify below)" : pickupLocation} onChange={e => handlePickupLocation(e.target.value)} className={sel}>
-                    <option value="">— Select Location —</option>
+                    <option value="">— Select —</option>
                     {pickupLocations.map(l => <option key={l} value={l}>{l}</option>)}
                   </select>
                 )}
               </div>
               {pickupCustom && (
-                <div className="sm:col-span-2"><label className={lbl}>Specify Pickup Location</label>
+                <div className="sm:col-span-2"><label className={lbl}>Specify Pickup</label>
                   <input value={pickupCustomText} onChange={e => setPickupCustomText(e.target.value)} autoFocus autoComplete="off" className={`${inp} border-gold/50`} />
                 </div>
               )}
               <div><label className={lbl}>Drop Region</label>
                 <select value={dropRegion} onChange={e => handleDropRegion(e.target.value)} className={sel}>
-                  <option value="">— Select Region —</option>
+                  <option value="">— Select —</option>
                   {REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
                 </select>
               </div>
               <div><label className={lbl}>Drop Location</label>
                 {!dropRegion ? (
-                  <input disabled placeholder="Select a region first" className="w-full border border-ink/15 bg-paper-soft text-muted px-3 py-2.5 rounded-lg text-sm cursor-not-allowed" />
+                  <input disabled className="w-full border border-ink/15 bg-paper-soft text-muted px-3 py-2.5 rounded-lg text-sm cursor-not-allowed" />
                 ) : (
                   <select value={dropCustom ? "Other (specify below)" : dropLocation} onChange={e => handleDropLocation(e.target.value)} className={sel}>
-                    <option value="">— Select Location —</option>
+                    <option value="">— Select —</option>
                     {dropLocations.map(l => <option key={l} value={l}>{l}</option>)}
                   </select>
                 )}
               </div>
               {dropCustom && (
-                <div className="sm:col-span-2"><label className={lbl}>Specify Drop Location</label>
+                <div className="sm:col-span-2"><label className={lbl}>Specify Drop</label>
                   <input value={dropCustomText} onChange={e => setDropCustomText(e.target.value)} autoFocus autoComplete="off" className={`${inp} border-gold/50`} />
                 </div>
               )}
-              <div><label className={lbl}>Pickup Date & Time</label><input type="datetime-local" value={pickupDatetime} onChange={e => setPickupDatetime(e.target.value)} className={inp} /></div>
-              <div><label className={lbl}>Drop Date & Time (estimate)</label><input type="datetime-local" value={dropoffDatetime} onChange={e => setDropoffDatetime(e.target.value)} className={inp} /></div>
+              <div><label className={lbl}>Pickup Date &amp; Time</label><input type="datetime-local" value={pickupDatetime} onChange={e => setPickupDatetime(e.target.value)} className={inp} /></div>
+              <div><label className={lbl}>Drop Date &amp; Time</label><input type="datetime-local" value={dropoffDatetime} onChange={e => setDropoffDatetime(e.target.value)} className={inp} /></div>
               <div className="sm:col-span-2"><label className={lbl}>Travel Details</label>
                 <textarea value={travelDetails} onChange={e => setTravelDetails(e.target.value)} rows={3}
-                  placeholder="Group size, luggage, special requirements..."
                   className="w-full border border-ink/15 bg-paper text-ink px-3 py-2.5 rounded-lg text-sm outline-none focus:border-gold resize-none" />
               </div>
               <div className="sm:col-span-2"><label className={lbl}>Internal Notes</label>
@@ -728,13 +788,9 @@ function BookingForm({ onClose, onSave }: { onClose: () => void; onSave: () => v
               </div>
             </div>
           </div>
-
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-700">
-            💡 Booking starts as <strong>Confirmed</strong>. When the car returns and you've written the invoice, click <strong>Record Invoice</strong> to enter it here. It stays open until you <strong>Mark as Paid</strong>.
-          </div>
         </div>
 
-        <div className="px-6 py-4 border-t border-ink/10 flex gap-3 justify-end">
+        <div className="px-6 py-4 border-t border-ink/10 flex gap-3 justify-end sticky bottom-0 bg-paper">
           <button onClick={onClose} className="px-5 py-2.5 text-sm text-muted border border-ink/15 rounded-xl">Cancel</button>
           <button onClick={handleSave} disabled={saving || !canSave}
             className="px-5 py-2.5 text-sm bg-gold text-ink rounded-xl font-medium hover:bg-gold/90 disabled:opacity-50">
@@ -746,6 +802,7 @@ function BookingForm({ onClose, onSave }: { onClose: () => void; onSave: () => v
   );
 }
 
+// ── MAIN ─────────────────────────────────────────────────────────
 export default function BookingsPage() {
   const [bookings, setBookings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -753,20 +810,21 @@ export default function BookingsPage() {
   const [invoiceBooking, setInvoiceBooking] = useState<any>(null);
   const [paymentBooking, setPaymentBooking] = useState<any>(null);
   const [viewBooking, setViewBooking] = useState<any>(null);
+  const [docsBooking, setDocsBooking] = useState<any>(null);
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<"all" | Stage>("all");
 
   const fetchBookings = useCallback(async () => {
     const res = await fetch("/api/admin/bookings");
     const data = await res.json();
-    setBookings(data);
+    setBookings(Array.isArray(data) ? data : []);
     setLoading(false);
   }, []);
 
   useEffect(() => { fetchBookings(); }, [fetchBookings]);
 
   const deleteBooking = async (id: number, ref: string) => {
-    if (!confirm(`Delete booking ${ref}? This will also remove all linked expenses. This cannot be undone.`)) return;
+    if (!confirm(`Delete ${ref}? Linked expenses go too. This cannot be undone.`)) return;
     await fetch("/api/admin/bookings/delete", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
@@ -819,31 +877,31 @@ export default function BookingsPage() {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-green-50 border border-green-200 rounded-2xl p-4">
-          <div className="text-xs tracking-widest uppercase text-green-700 mb-1">Total Revenue</div>
+          <div className="text-xs tracking-widest uppercase text-green-700 mb-1">Revenue</div>
           <div className="font-display text-2xl font-medium text-green-700">{totalRevenue.toLocaleString()}</div>
-          <div className="text-xs text-green-600 mt-0.5">TZS · invoiced trips</div>
+          <div className="text-xs text-green-600 mt-0.5">TZS</div>
         </div>
         <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
-          <div className="text-xs tracking-widest uppercase text-red-700 mb-1">Trip Direct Costs</div>
-          <div className="font-display text-2xl font-medium text-red-600">{totalTripCost.toLocaleString()}</div>
-          <div className="text-xs text-red-500 mt-0.5">TZS · fuel + allowance + emergency + borrowed payouts</div>
+          <div className="text-xs tracking-widest uppercase text-red-700 mb-1">Trip Costs</div>
+          <div className="font-display text-2xl font-medium text-red-600">{Math.round(totalTripCost).toLocaleString()}</div>
+          <div className="text-xs text-red-500 mt-0.5">TZS</div>
         </div>
         <div className={`border rounded-2xl p-4 ${totalProfit >= 0 ? "bg-gold/10 border-gold/30" : "bg-red-100 border-red-300"}`}>
           <div className={`text-xs tracking-widest uppercase mb-1 ${totalProfit >= 0 ? "text-gold" : "text-red-700"}`}>Net from Trips</div>
-          <div className={`font-display text-2xl font-medium ${totalProfit >= 0 ? "text-gold" : "text-red-700"}`}>{totalProfit.toLocaleString()}</div>
-          <div className={`text-xs mt-0.5 ${totalProfit >= 0 ? "text-gold" : "text-red-600"}`}>TZS · before monthly & periodic costs</div>
+          <div className={`font-display text-2xl font-medium ${totalProfit >= 0 ? "text-gold" : "text-red-700"}`}>{Math.round(totalProfit).toLocaleString()}</div>
+          <div className={`text-xs mt-0.5 ${totalProfit >= 0 ? "text-gold" : "text-red-600"}`}>TZS</div>
         </div>
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
           <div className="text-xs tracking-widest uppercase text-amber-700 mb-1">Outstanding</div>
           <div className="font-display text-2xl font-medium text-amber-700">{outstanding.toLocaleString()}</div>
-          <div className="text-xs text-amber-600 mt-0.5">TZS · {outstandingBookings.length} not yet paid</div>
+          <div className="text-xs text-amber-600 mt-0.5">TZS · {outstandingBookings.length} unpaid</div>
         </div>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
-          <input type="text" placeholder="Search by ref, customer or location..."
+          <input type="text" placeholder="Search ref, customer or location"
             value={search} onChange={e => setSearch(e.target.value)} autoComplete="off"
             className="w-full pl-10 pr-4 py-2.5 border border-ink/15 rounded-xl text-sm bg-paper outline-none focus:border-gold" />
         </div>
@@ -865,7 +923,6 @@ export default function BookingsPage() {
         <div className="text-center py-16 bg-paper rounded-2xl border border-ink/10">
           <CalendarCheck className="w-10 h-10 text-muted mx-auto mb-3" />
           <p className="text-muted text-sm">No bookings found.</p>
-          <button onClick={() => setShowForm(true)} className="mt-3 text-gold text-sm hover:underline">Create first booking →</button>
         </div>
       ) : (
         <div className="bg-paper rounded-2xl border border-ink/10 overflow-hidden">
@@ -873,7 +930,7 @@ export default function BookingsPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-ink/10 bg-paper-soft">
-                  {["Ref","Customer","Service","Route","Vehicle","Driver","Date","Revenue","Zuri Net","Stage","Actions"].map(h => (
+                  {["Ref","Customer","Service","Route","Vehicles","Date","Revenue","Zuri Net","Stage","Actions"].map(h => (
                     <th key={h} className="px-3 py-3 text-left text-xs tracking-widest uppercase text-muted font-medium whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -885,6 +942,8 @@ export default function BookingsPage() {
                   const profit = paid - cost;
                   const stage = getStage(b);
                   const invoiced = isInvoiced(b);
+                  const list = b.vehicles || [];
+                  const hasBorrowed = list.some((v: any) => v.is_borrowed);
 
                   return (
                     <tr key={b.id} className="hover:bg-paper-soft transition-colors">
@@ -899,12 +958,11 @@ export default function BookingsPage() {
                         <div className="text-xs text-muted">→ {b.dropoff_region}</div>
                       </td>
                       <td className="px-3 py-3 text-xs text-ink-soft whitespace-nowrap">
-                        {getVehicleLabel(b)}
-                        {b.is_borrowed_vehicle && (
+                        {fleetSummary(b)}
+                        {hasBorrowed && (
                           <span className="ml-1.5 text-[0.6rem] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 font-medium">Borrowed</span>
                         )}
                       </td>
-                      <td className="px-3 py-3 text-xs text-ink-soft whitespace-nowrap">{b.driver_name || "—"}</td>
                       <td className="px-3 py-3 text-xs text-muted whitespace-nowrap">
                         {b.pickup_datetime ? new Date(b.pickup_datetime).toLocaleDateString("en-TZ",{day:"numeric",month:"short",year:"2-digit"}) : "—"}
                       </td>
@@ -913,20 +971,26 @@ export default function BookingsPage() {
                       </td>
                       <td className="px-3 py-3 text-xs whitespace-nowrap">
                         {invoiced ? (
-                          <span className={`font-semibold ${profit >= 0 ? "text-gold" : "text-red-500"}`}>{profit >= 0 ? "+" : ""}{profit.toLocaleString()}</span>
+                          <span className={`font-semibold ${profit >= 0 ? "text-gold" : "text-red-500"}`}>{profit >= 0 ? "+" : ""}{Math.round(profit).toLocaleString()}</span>
                         ) : <span className="text-muted">—</span>}
                       </td>
                       <td className="px-3 py-3"><StageBadge booking={b} /></td>
                       <td className="px-3 py-3">
                         <div className="flex items-center gap-1">
-                          <button onClick={() => setViewBooking(b)} title="View details"
+                          <button onClick={() => setViewBooking(b)} title="View"
                             className="p-1.5 text-muted hover:text-ink hover:bg-ink/5 rounded-lg transition-colors">
                             <Eye className="w-3.5 h-3.5" />
                           </button>
                           {stage === "confirmed" && (
-                            <button onClick={() => setInvoiceBooking(b)} title="Record invoice & costs"
+                            <button onClick={() => setInvoiceBooking(b)} title="Record invoice"
                               className="p-1.5 text-muted hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
                               <FileText className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {(stage === "invoiced" || stage === "overdue" || stage === "completed") && (
+                            <button onClick={() => setDocsBooking(b)} title="Print documents"
+                              className="p-1.5 text-muted hover:text-gold hover:bg-gold/10 rounded-lg transition-colors">
+                              <Printer className="w-3.5 h-3.5" />
                             </button>
                           )}
                           {(stage === "invoiced" || stage === "overdue") && (
@@ -935,19 +999,19 @@ export default function BookingsPage() {
                                 className="p-1.5 text-muted hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
                                 <Edit className="w-3.5 h-3.5" />
                               </button>
-                              <button onClick={() => setPaymentBooking(b)} title="Mark as paid"
+                              <button onClick={() => setPaymentBooking(b)} title="Mark paid"
                                 className="p-1.5 text-muted hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors">
                                 <Banknote className="w-3.5 h-3.5" />
                               </button>
                             </>
                           )}
                           {stage === "confirmed" && (
-                            <button onClick={() => { if(confirm("Cancel this booking?")) cancelBooking(b.id); }} title="Cancel booking"
+                            <button onClick={() => { if(confirm("Cancel this booking?")) cancelBooking(b.id); }} title="Cancel"
                               className="p-1.5 text-muted hover:text-amber-500 hover:bg-amber-50 rounded-lg transition-colors">
                               <AlertTriangle className="w-3.5 h-3.5" />
                             </button>
                           )}
-                          <button onClick={() => deleteBooking(b.id, b.booking_ref)} title="Delete booking"
+                          <button onClick={() => deleteBooking(b.id, b.booking_ref)} title="Delete"
                             className="p-1.5 text-muted hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -966,7 +1030,7 @@ export default function BookingsPage() {
       {invoiceBooking && <RecordInvoiceModal booking={invoiceBooking} onClose={() => setInvoiceBooking(null)} onSave={() => { fetchBookings(); setInvoiceBooking(null); }} />}
       {paymentBooking && <MarkPaidModal booking={paymentBooking} onClose={() => setPaymentBooking(null)} onSave={() => { fetchBookings(); setPaymentBooking(null); }} />}
       {viewBooking && <ViewBookingModal booking={viewBooking} onClose={() => setViewBooking(null)} />}
+      {docsBooking && <BookingDocuments booking={docsBooking} onClose={() => setDocsBooking(null)} onSaved={fetchBookings} />}
     </div>
   );
 }
-

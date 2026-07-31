@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
@@ -93,7 +93,6 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
                 <label className={lbl}>Confirm New Password</label>
                 <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} autoComplete="off" className={inp} />
               </div>
-              <p className="text-xs text-muted">Forgot your current password? Ask Ray to reset it for you from the Users page.</p>
             </div>
             <div className="px-6 py-4 border-t border-ink/10 flex gap-3 justify-end">
               <button onClick={onClose} className="px-5 py-2.5 text-sm text-muted border border-ink/15 rounded-xl">Cancel</button>
