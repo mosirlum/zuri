@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Plus, CalendarCheck, Search, Eye, AlertTriangle, Trash2, FileText, Banknote, Edit, Users, X, Car, Printer } from "lucide-react";
+import { Plus, CalendarCheck, Search, Eye, AlertTriangle, Trash2, FileText, Banknote, Edit, Users, X, Car, Printer, Pencil } from "lucide-react";
 import BookingDocuments from "@/components/BookingDocuments";
 import { REGIONS, getLocations } from "@/lib/regions";
 
@@ -23,6 +23,18 @@ const daysBetween = (from: string, to: Date = new Date()) => {
 };
 
 const getTotalCost = (b: any) => (parseFloat(b.trip_cost) || 0) + (parseFloat(b.owner_payout_amount) || 0);
+
+// Counted inclusively — Monday out, Friday back is five days on the road, and
+// that's what the driver's allowance is paid against.
+const tripDays = (from: string, to: string) => {
+  if (!from || !to) return null;
+  const a = new Date(from), b = new Date(to);
+  if (isNaN(a.getTime()) || isNaN(b.getTime())) return null;
+  const d = Math.floor((b.setHours(0,0,0,0) - a.setHours(0,0,0,0)) / 86400000) + 1;
+  return d > 0 ? d : null;
+};
+
+const bookingDays = (b: any) => tripDays(b.pickup_datetime, b.return_datetime || b.dropoff_datetime);
 
 const vehicleName = (bv: any) =>
   bv.is_borrowed
@@ -444,6 +456,15 @@ function ViewBookingModal({ booking, onClose }: { booking: any; onClose: () => v
               <div className="flex gap-2"><span className="text-muted w-16">From:</span><span>{booking.pickup_location}, {booking.pickup_region}</span></div>
               <div className="flex gap-2"><span className="text-muted w-16">To:</span><span>{booking.dropoff_location}, {booking.dropoff_region}</span></div>
               <div className="flex gap-2"><span className="text-muted w-16">Date:</span><span>{booking.pickup_datetime ? new Date(booking.pickup_datetime).toLocaleString("en-TZ") : "—"}</span></div>
+              {booking.return_datetime && (
+                <div className="flex gap-2">
+                  <span className="text-muted w-16">Return:</span>
+                  <span>
+                    {new Date(booking.return_datetime).toLocaleString("en-TZ")}
+                    {bookingDays(booking) ? ` · ${bookingDays(booking)} days` : ""}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -543,36 +564,56 @@ function ViewBookingModal({ booking, onClose }: { booking: any; onClose: () => v
 }
 
 // ── NEW BOOKING ──────────────────────────────────────────────────
-function BookingForm({ onClose, onSave }: { onClose: () => void; onSave: () => void }) {
+function BookingForm({ booking, onClose, onSave }: { booking?: any; onClose: () => void; onSave: () => void }) {
+  const editing = !!booking;
+  // Once a job is invoiced its cars carry recorded costs and matching expense
+  // rows, so the vehicle list is locked from that point on.
+  const vehiclesLocked = editing && !!booking.invoice_number;
+
   const [fleet, setFleet] = useState<any[]>([]);
   const [drivers, setDrivers] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
-  const [customerName, setCustomerName] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("");
-  const [customerEmail, setCustomerEmail] = useState("");
-  const [serviceType, setServiceType] = useState("car_hire");
-  const [rows, setRows] = useState<any[]>([
-    { source: "fleet", vehicle_id: "", driver_id: "", borrowed_vehicle_desc: "", borrowed_owner_name: "", borrowed_owner_phone: "" },
-  ]);
-  const [pickupRegion, setPickupRegion] = useState("");
-  const [pickupLocation, setPickupLocation] = useState("");
+  const [customerName, setCustomerName] = useState(booking?.customer_name || "");
+  const [customerPhone, setCustomerPhone] = useState(booking?.customer_phone || "");
+  const [customerEmail, setCustomerEmail] = useState(booking?.customer_email || "");
+  const [serviceType, setServiceType] = useState(booking?.service_type || "car_hire");
+  const [rows, setRows] = useState<any[]>(
+    booking?.vehicles?.length
+      ? booking.vehicles.map((v: any) => ({
+          id: v.id,
+          source: v.is_borrowed ? "borrowed" : "fleet",
+          vehicle_id: v.vehicle_id ? String(v.vehicle_id) : "",
+          driver_id: v.driver_id ? String(v.driver_id) : "",
+          borrowed_vehicle_desc: v.borrowed_vehicle_desc || "",
+          borrowed_owner_name: v.borrowed_owner_name || "",
+          borrowed_owner_phone: v.borrowed_owner_phone || "",
+        }))
+      : [{ source: "fleet", vehicle_id: "", driver_id: "", borrowed_vehicle_desc: "", borrowed_owner_name: "", borrowed_owner_phone: "" }]
+  );
+  const [pickupRegion, setPickupRegion] = useState(booking?.pickup_region || "");
+  const [pickupLocation, setPickupLocation] = useState(booking?.pickup_location || "");
   const [pickupLocations, setPickupLocations] = useState<string[]>([]);
   const [pickupCustom, setPickupCustom] = useState(false);
   const [pickupCustomText, setPickupCustomText] = useState("");
-  const [dropRegion, setDropRegion] = useState("");
-  const [dropLocation, setDropLocation] = useState("");
+  const [dropRegion, setDropRegion] = useState(booking?.dropoff_region || "");
+  const [dropLocation, setDropLocation] = useState(booking?.dropoff_location || "");
   const [dropLocations, setDropLocations] = useState<string[]>([]);
   const [dropCustom, setDropCustom] = useState(false);
   const [dropCustomText, setDropCustomText] = useState("");
-  const [pickupDatetime, setPickupDatetime] = useState("");
-  const [dropoffDatetime, setDropoffDatetime] = useState("");
-  const [travelDetails, setTravelDetails] = useState("");
-  const [notes, setNotes] = useState("");
+  const [pickupDatetime, setPickupDatetime] = useState(booking?.pickup_datetime?.slice(0, 16) || "");
+  const [dropoffDatetime, setDropoffDatetime] = useState(booking?.dropoff_datetime?.slice(0, 16) || "");
+  const [returnDatetime, setReturnDatetime] = useState(booking?.return_datetime?.slice(0, 16) || "");
+  const [travelDetails, setTravelDetails] = useState(booking?.travel_details || "");
+  const [notes, setNotes] = useState(booking?.notes || "");
 
   useEffect(() => {
     fetch("/api/admin/vehicles").then(r => r.json()).then(d => setFleet(d.filter((v: any) => v.status === "available")));
     fetch("/api/admin/drivers").then(r => r.json()).then(d => setDrivers(d));
-  }, []);
+    // Reopening a saved booking needs its region's locations loaded, otherwise
+    // the dropdowns come up empty next to a filled-in value.
+    if (booking?.pickup_region) setPickupLocations(getLocations(booking.pickup_region));
+    if (booking?.dropoff_region) setDropLocations(getLocations(booking.dropoff_region));
+  }, [booking]);
 
   const handlePickupRegion = (r: string) => { setPickupRegion(r); setPickupLocation(""); setPickupCustom(false); setPickupLocations(r ? getLocations(r) : []); };
   const handlePickupLocation = (l: string) => { if (l === "Other (specify below)") { setPickupCustom(true); setPickupLocation(""); } else { setPickupCustom(false); setPickupLocation(l); } };
@@ -589,6 +630,10 @@ function BookingForm({ onClose, onSave }: { onClose: () => void; onSave: () => v
   // A car already picked on another row shouldn't be selectable twice.
   const takenIds = rows.map(r => r.vehicle_id).filter(Boolean);
 
+  // A job that leaves Dar keeps the car out overnight, so the return date is
+  // what tells us how many days the driver was away.
+  const needsReturn = !!dropRegion && dropRegion !== "Dar es Salaam";
+
   const rowValid = (r: any) =>
     r.source === "borrowed" ? !!(r.borrowed_vehicle_desc && r.borrowed_owner_name) : !!r.vehicle_id;
   const canSave = customerName && rows.length > 0 && rows.every(rowValid);
@@ -596,13 +641,15 @@ function BookingForm({ onClose, onSave }: { onClose: () => void; onSave: () => v
   const handleSave = async () => {
     setSaving(true);
     await fetch("/api/admin/bookings", {
-      method: "POST",
+      method: editing ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        id: booking?.id,
         customer_name: customerName, customer_phone: customerPhone,
-        customer_email: customerEmail, status: "confirmed",
+        customer_email: customerEmail, status: booking?.status || "confirmed",
         service_type: serviceType,
         vehicles: rows.map(r => ({
+          id: r.id,
           is_borrowed: r.source === "borrowed",
           vehicle_id: r.source === "borrowed" ? null : (r.vehicle_id || null),
           driver_id: r.driver_id || null,
@@ -613,6 +660,7 @@ function BookingForm({ onClose, onSave }: { onClose: () => void; onSave: () => v
         pickup_region: pickupRegion, pickup_location: pickupCustom ? pickupCustomText : pickupLocation,
         dropoff_region: dropRegion, dropoff_location: dropCustom ? dropCustomText : dropLocation,
         pickup_datetime: pickupDatetime || null, dropoff_datetime: dropoffDatetime || null,
+        return_datetime: returnDatetime || null,
         travel_details: travelDetails || null, notes: notes || null,
       }),
     });
@@ -624,7 +672,10 @@ function BookingForm({ onClose, onSave }: { onClose: () => void; onSave: () => v
     <div className="fixed inset-0 z-50 bg-ink/60 flex items-center justify-center p-4">
       <div className="bg-paper rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="px-6 py-4 border-b border-ink/10 flex items-center justify-between sticky top-0 bg-paper z-10">
-          <h2 className="font-display text-xl font-medium">New Booking</h2>
+          <div>
+            <h2 className="font-display text-xl font-medium">{editing ? "Edit Booking" : "New Booking"}</h2>
+            {editing && <p className="text-xs text-gold font-mono mt-0.5">{booking.booking_ref}</p>}
+          </div>
           <button onClick={onClose} className="text-muted hover:text-ink text-xl">✕</button>
         </div>
         <div className="p-6 space-y-6">
@@ -648,11 +699,14 @@ function BookingForm({ onClose, onSave }: { onClose: () => void; onSave: () => v
             <div className="flex items-center justify-between mb-3">
               <p className="text-xs tracking-widest uppercase text-gold font-medium">
                 Vehicles &amp; Drivers {rows.length > 1 && <span className="text-muted normal-case tracking-normal font-normal">· {rows.length}</span>}
+                {vehiclesLocked && <span className="ml-2 text-muted normal-case tracking-normal font-normal">· locked after invoicing</span>}
               </p>
-              <button type="button" onClick={addRow}
-                className="flex items-center gap-1.5 text-xs bg-ink text-paper px-3 py-1.5 rounded-lg font-medium hover:bg-gold hover:text-ink transition-colors">
-                <Plus className="w-3.5 h-3.5" /> Add
-              </button>
+              {!vehiclesLocked && (
+                <button type="button" onClick={addRow}
+                  className="flex items-center gap-1.5 text-xs bg-ink text-paper px-3 py-1.5 rounded-lg font-medium hover:bg-gold hover:text-ink transition-colors">
+                  <Plus className="w-3.5 h-3.5" /> Add
+                </button>
+              )}
             </div>
 
             <div className="space-y-3">
@@ -671,7 +725,7 @@ function BookingForm({ onClose, onSave }: { onClose: () => void; onSave: () => v
                           Borrowed
                         </button>
                       </div>
-                      {rows.length > 1 && (
+                      {rows.length > 1 && !vehiclesLocked && (
                         <button type="button" onClick={() => removeRow(i)} title="Remove"
                           className="p-1.5 text-muted hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
                           <X className="w-4 h-4" />
@@ -778,6 +832,27 @@ function BookingForm({ onClose, onSave }: { onClose: () => void; onSave: () => v
               )}
               <div><label className={lbl}>Pickup Date &amp; Time</label><input type="datetime-local" value={pickupDatetime} onChange={e => setPickupDatetime(e.target.value)} className={inp} /></div>
               <div><label className={lbl}>Drop Date &amp; Time</label><input type="datetime-local" value={dropoffDatetime} onChange={e => setDropoffDatetime(e.target.value)} className={inp} /></div>
+
+              <div>
+                <label className={lbl}>
+                  Return Date &amp; Time
+                  <span className="ml-2 text-muted normal-case font-normal tracking-normal">optional</span>
+                </label>
+                <input type="datetime-local" value={returnDatetime} onChange={e => setReturnDatetime(e.target.value)}
+                  className={`${inp} ${needsReturn && !returnDatetime ? "border-amber-400" : ""}`} />
+                {needsReturn && !returnDatetime && (
+                  <p className="text-xs text-amber-700 mt-1.5">Outside Dar es Salaam &mdash; add it to count the days</p>
+                )}
+              </div>
+
+              <div className="flex items-end">
+                {tripDays(pickupDatetime, returnDatetime) ? (
+                  <div className="bg-gold/10 border border-gold/30 rounded-xl px-4 py-2.5 w-full text-sm">
+                    <span className="text-muted">Duration </span>
+                    <strong className="text-gold">{tripDays(pickupDatetime, returnDatetime)} days</strong>
+                  </div>
+                ) : null}
+              </div>
               <div className="sm:col-span-2"><label className={lbl}>Travel Details</label>
                 <textarea value={travelDetails} onChange={e => setTravelDetails(e.target.value)} rows={3}
                   className="w-full border border-ink/15 bg-paper text-ink px-3 py-2.5 rounded-lg text-sm outline-none focus:border-gold resize-none" />
@@ -794,7 +869,7 @@ function BookingForm({ onClose, onSave }: { onClose: () => void; onSave: () => v
           <button onClick={onClose} className="px-5 py-2.5 text-sm text-muted border border-ink/15 rounded-xl">Cancel</button>
           <button onClick={handleSave} disabled={saving || !canSave}
             className="px-5 py-2.5 text-sm bg-gold text-ink rounded-xl font-medium hover:bg-gold/90 disabled:opacity-50">
-            {saving ? "Creating..." : "Create Booking"}
+            {saving ? "Saving..." : editing ? "Save Changes" : "Create Booking"}
           </button>
         </div>
       </div>
@@ -810,6 +885,7 @@ export default function BookingsPage() {
   const [invoiceBooking, setInvoiceBooking] = useState<any>(null);
   const [paymentBooking, setPaymentBooking] = useState<any>(null);
   const [viewBooking, setViewBooking] = useState<any>(null);
+  const [editBooking, setEditBooking] = useState<any>(null);
   const [docsBooking, setDocsBooking] = useState<any>(null);
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<"all" | Stage>("all");
@@ -981,6 +1057,12 @@ export default function BookingsPage() {
                             className="p-1.5 text-muted hover:text-ink hover:bg-ink/5 rounded-lg transition-colors">
                             <Eye className="w-3.5 h-3.5" />
                           </button>
+                          {stage !== "cancelled" && (
+                            <button onClick={() => setEditBooking(b)} title="Edit booking"
+                              className="p-1.5 text-muted hover:text-gold hover:bg-gold/10 rounded-lg transition-colors">
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           {stage === "confirmed" && (
                             <button onClick={() => setInvoiceBooking(b)} title="Record invoice"
                               className="p-1.5 text-muted hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
@@ -1027,6 +1109,7 @@ export default function BookingsPage() {
       )}
 
       {showForm && <BookingForm onClose={() => setShowForm(false)} onSave={() => { fetchBookings(); setShowForm(false); }} />}
+      {editBooking && <BookingForm booking={editBooking} onClose={() => setEditBooking(null)} onSave={() => { fetchBookings(); setEditBooking(null); }} />}
       {invoiceBooking && <RecordInvoiceModal booking={invoiceBooking} onClose={() => setInvoiceBooking(null)} onSave={() => { fetchBookings(); setInvoiceBooking(null); }} />}
       {paymentBooking && <MarkPaidModal booking={paymentBooking} onClose={() => setPaymentBooking(null)} onSave={() => { fetchBookings(); setPaymentBooking(null); }} />}
       {viewBooking && <ViewBookingModal booking={viewBooking} onClose={() => setViewBooking(null)} />}

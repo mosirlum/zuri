@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, memo } from "react";
-import { Plus, User, AlertTriangle, CheckCircle, Edit, Phone, Lock } from "lucide-react";
+import { Plus, User, AlertTriangle, CheckCircle, Edit, Phone } from "lucide-react";
 import Link from "next/link";
 
 interface Driver {
@@ -30,6 +30,10 @@ const statusColors: Record<string, string> = {
   off: "bg-gray-100 text-gray-600",
   leave: "bg-amber-100 text-amber-700",
 };
+
+const inp = "w-full border border-ink/15 bg-paper text-ink px-3 py-2.5 rounded-lg text-sm outline-none focus:border-gold transition-colors";
+const sel = "w-full border border-ink/15 bg-paper text-ink px-3 py-2.5 rounded-lg text-sm outline-none focus:border-gold";
+const lbl = "block text-xs tracking-widest uppercase text-muted mb-1.5 font-medium";
 
 function DocRow({ label, days, date }: { label: string; days: number | null; date: string }) {
   const color = !date ? "text-muted" : days === null ? "text-muted" : days <= 0 ? "text-red-600 font-semibold" : days <= 14 ? "text-red-500" : days <= 30 ? "text-amber-600" : "text-green-600";
@@ -92,10 +96,7 @@ const DriverCard = memo(({ driver, getDaysUntil, onEdit }: {
 
         <div className="border-t border-ink/5 pt-3 space-y-1.5">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-muted uppercase tracking-widest flex items-center gap-1.5">
-              Documents
-              <Lock className="w-3 h-3 opacity-50" />
-            </span>
+            <span className="text-xs font-medium text-muted uppercase tracking-widest">Documents</span>
             {docStatus === "ok" && <CheckCircle className="w-3.5 h-3.5 text-green-500" />}
             {["warning", "critical", "expired"].includes(docStatus) && (
               <AlertTriangle className={`w-3.5 h-3.5 ${docStatus === "expired" ? "text-red-500" : docStatus === "critical" ? "text-red-400" : "text-amber-500"}`} />
@@ -111,13 +112,18 @@ const DriverCard = memo(({ driver, getDaysUntil, onEdit }: {
 });
 DriverCard.displayName = "DriverCard";
 
-// Documents are owned by the driver — Ray sees them, the driver keeps them current.
 function DriverForm({ driver, onClose, onSave }: {
   driver: Driver;
   onClose: () => void;
   onSave: () => void;
 }) {
   const [status, setStatus] = useState(driver.status || "available");
+  const [licenseNumber, setLicenseNumber] = useState(driver.license_number || "");
+  const [licenseClass, setLicenseClass] = useState(driver.license_class || "C");
+  const [licenseExpiry, setLicenseExpiry] = useState(driver.license_expiry?.split("T")[0] || "");
+  const [psvBadgeNumber, setPsvBadgeNumber] = useState(driver.psv_badge_number || "");
+  const [psvBadgeExpiry, setPsvBadgeExpiry] = useState(driver.psv_badge_expiry?.split("T")[0] || "");
+  const [goodConductExpiry, setGoodConductExpiry] = useState(driver.good_conduct_expiry?.split("T")[0] || "");
   const [emergencyName, setEmergencyName] = useState(driver.emergency_contact_name || "");
   const [emergencyPhone, setEmergencyPhone] = useState(driver.emergency_contact_phone || "");
   const [uniformCompliant, setUniformCompliant] = useState(driver.uniform_compliant || false);
@@ -125,8 +131,6 @@ function DriverForm({ driver, onClose, onSave }: {
   const [uniformNotes, setUniformNotes] = useState(driver.uniform_notes || "");
   const [notes, setNotes] = useState(driver.notes || "");
   const [saving, setSaving] = useState(false);
-
-  const fmt = (d: string) => d ? new Date(d).toLocaleDateString("en-TZ") : "—";
 
   const handleSave = async () => {
     setSaving(true);
@@ -136,12 +140,15 @@ function DriverForm({ driver, onClose, onSave }: {
       body: JSON.stringify({
         id: driver.id,
         full_name: driver.full_name, phone: driver.phone || null, email: driver.email || null,
-        license_number: driver.license_number || null, license_class: driver.license_class || null,
-        license_expiry: driver.license_expiry || null,
-        psv_badge_number: driver.psv_badge_number || null, psv_badge_expiry: driver.psv_badge_expiry || null,
-        good_conduct_expiry: driver.good_conduct_expiry || null,
         status,
-        emergency_contact_name: emergencyName || null, emergency_contact_phone: emergencyPhone || null,
+        license_number: licenseNumber || null,
+        license_class: licenseClass || null,
+        license_expiry: licenseExpiry || null,
+        psv_badge_number: psvBadgeNumber || null,
+        psv_badge_expiry: psvBadgeExpiry || null,
+        good_conduct_expiry: goodConductExpiry || null,
+        emergency_contact_name: emergencyName || null,
+        emergency_contact_phone: emergencyPhone || null,
         uniform_compliant: uniformCompliant,
         uniform_last_checked: uniformLastChecked || null,
         uniform_notes: uniformNotes || null,
@@ -151,10 +158,6 @@ function DriverForm({ driver, onClose, onSave }: {
     setSaving(false);
     onSave();
   };
-
-  const inp = "w-full border border-ink/15 bg-paper text-ink px-3 py-2.5 rounded-lg text-sm outline-none focus:border-gold transition-colors";
-  const sel = "w-full border border-ink/15 bg-paper text-ink px-3 py-2.5 rounded-lg text-sm outline-none focus:border-gold";
-  const lbl = "block text-xs tracking-widest uppercase text-muted mb-1.5 font-medium";
 
   return (
     <div className="fixed inset-0 z-50 bg-ink/60 flex items-center justify-center p-4">
@@ -176,30 +179,18 @@ function DriverForm({ driver, onClose, onSave }: {
           </div>
 
           <div>
-            <p className="text-xs tracking-widest uppercase text-gold font-medium mb-3 flex items-center gap-1.5">
-              Documents <Lock className="w-3 h-3 opacity-50" />
-            </p>
-            <div className="bg-paper-soft border border-ink/10 rounded-xl divide-y divide-ink/5">
-              <div className="px-4 py-2.5 flex justify-between text-sm">
-                <span className="text-muted">License</span>
-                <span className="text-ink">{driver.license_number || "—"}{driver.license_class ? ` · ${driver.license_class}` : ""}</span>
+            <p className="text-xs tracking-widest uppercase text-gold font-medium mb-3">Documents</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div><label className={lbl}>License Number</label><input value={licenseNumber} onChange={e => setLicenseNumber(e.target.value)} autoComplete="off" className={inp} /></div>
+              <div><label className={lbl}>License Class</label>
+                <select value={licenseClass} onChange={e => setLicenseClass(e.target.value)} className={sel}>
+                  {["B","C","E","B+C","C+E"].map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
               </div>
-              <div className="px-4 py-2.5 flex justify-between text-sm">
-                <span className="text-muted">License expiry</span>
-                <span className="text-ink">{fmt(driver.license_expiry)}</span>
-              </div>
-              <div className="px-4 py-2.5 flex justify-between text-sm">
-                <span className="text-muted">PSV badge</span>
-                <span className="text-ink">{driver.psv_badge_number || "—"}</span>
-              </div>
-              <div className="px-4 py-2.5 flex justify-between text-sm">
-                <span className="text-muted">PSV expiry</span>
-                <span className="text-ink">{fmt(driver.psv_badge_expiry)}</span>
-              </div>
-              <div className="px-4 py-2.5 flex justify-between text-sm">
-                <span className="text-muted">Good conduct expiry</span>
-                <span className="text-ink">{fmt(driver.good_conduct_expiry)}</span>
-              </div>
+              <div><label className={lbl}>License Expiry</label><input type="date" value={licenseExpiry} onChange={e => setLicenseExpiry(e.target.value)} className={inp} /></div>
+              <div><label className={lbl}>PSV Badge Number</label><input value={psvBadgeNumber} onChange={e => setPsvBadgeNumber(e.target.value)} autoComplete="off" className={inp} /></div>
+              <div><label className={lbl}>PSV Badge Expiry</label><input type="date" value={psvBadgeExpiry} onChange={e => setPsvBadgeExpiry(e.target.value)} className={inp} /></div>
+              <div><label className={lbl}>Good Conduct Expiry</label><input type="date" value={goodConductExpiry} onChange={e => setGoodConductExpiry(e.target.value)} className={inp} /></div>
             </div>
           </div>
 
@@ -231,7 +222,7 @@ function DriverForm({ driver, onClose, onSave }: {
           </div>
         </div>
 
-        <div className="px-6 py-4 border-t border-ink/10 flex gap-3 justify-end">
+        <div className="px-6 py-4 border-t border-ink/10 flex gap-3 justify-end sticky bottom-0 bg-paper">
           <button onClick={onClose} className="px-5 py-2.5 text-sm text-muted border border-ink/15 rounded-xl">Cancel</button>
           <button onClick={handleSave} disabled={saving}
             className="px-5 py-2.5 text-sm bg-gold text-ink rounded-xl font-medium hover:bg-gold/90 disabled:opacity-50">

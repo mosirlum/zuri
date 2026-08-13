@@ -91,6 +91,8 @@ export default function BookingDocuments({ booking, onClose, onSaved }: {
     proformaNo: saved.proformaNo || "",
     orderNo: saved.orderNo || "",
     orderDate: saved.orderDate || "",
+    tripStart: saved.tripStart || "",
+    tripEnd: saved.tripEnd || "",
     recipientTitle: saved.recipientTitle || "Rector,",
     recipientOrg: saved.recipientOrg || booking.customer_name || "",
     recipientPobox: saved.recipientPobox || "",
@@ -121,6 +123,21 @@ export default function BookingDocuments({ booking, onClose, onSaved }: {
     }]
   );
 
+  // One job can be crewed by more than one driver, each needing its own line
+  // in the order table even though the order number stays the same.
+  const [orderRows, setOrderRows] = useState<Array<{ driver: string; details: string }>>(
+    saved.orderRows?.length
+      ? saved.orderRows
+      : [{ driver: driversAuto, details: saved.details || "" }]
+  );
+
+  const setOrderRow = (i: number, patch: any) => {
+    setOrderRows(prev => prev.map((r, idx) => idx === i ? { ...r, ...patch } : r));
+    setSavedOk(false);
+  };
+  const addOrderRow = () => setOrderRows(prev => [...prev, { driver: "", details: "" }]);
+  const removeOrderRow = (i: number) => setOrderRows(prev => prev.filter((_, idx) => idx !== i));
+
   const set = (k: string, v: string) => { setF(p => ({ ...p, [k]: v })); setSavedOk(false); };
   const setItem = (i: number, patch: Partial<LineItem>) => {
     setItems(prev => prev.map((r, idx) => idx === i ? { ...r, ...patch } : r));
@@ -130,15 +147,22 @@ export default function BookingDocuments({ booking, onClose, onSaved }: {
   const removeItem = (i: number) => setItems(prev => prev.filter((_, idx) => idx !== i));
 
   const grandTotal = items.reduce((s, r) => s + num(r.total), 0);
-  const firstDate = items[0]?.start_date;
-  const lastDate = items[items.length - 1]?.end_date || firstDate;
+
+  // Span the whole job rather than just the first row, so adding a later leg
+  // moves the end date on its own. A typed override always wins.
+  const allDates = items
+    .flatMap(r => [r.start_date, r.end_date])
+    .filter(Boolean)
+    .sort();
+  const firstDate = f.tripStart || allDates[0] || "";
+  const lastDate = f.tripEnd || allDates[allDates.length - 1] || firstDate;
 
   const save = async () => {
     setSaving(true);
     await fetch("/api/admin/bookings/documents", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: booking.id, document_data: { ...f, items } }),
+      body: JSON.stringify({ id: booking.id, document_data: { ...f, items, orderRows } }),
     });
     setSaving(false);
     setSavedOk(true);
@@ -264,7 +288,7 @@ export default function BookingDocuments({ booking, onClose, onSaved }: {
 
             <div className="band" style={{ display: "flex", justifyContent: "space-between", marginTop: "8px", fontSize: "10pt" }}>
               <div>Ref No <Ed value={isDN ? f.deliveryRef : f.invoiceRef} placeholder={isDN ? "ZT/DN/72/72/0180" : "ZT/AB/T172/72/0174"} onChange={v => set(isDN ? "deliveryRef" : "invoiceRef", v)} /></div>
-              <div><b>{longDate(isDN ? f.deliveryDate : f.invoiceDate) || "—"}</b></div>
+              <div><b><Ed value={longDate(isDN ? f.deliveryDate : f.invoiceDate)} placeholder="11th June 2026" onChange={v => set(isDN ? "deliveryDate" : "invoiceDate", v)} /></b></div>
             </div>
 
             <div className="band" style={{ display: "flex", justifyContent: "space-between" }}>
@@ -307,7 +331,7 @@ export default function BookingDocuments({ booking, onClose, onSaved }: {
                 </>
               )}
               <div className="l" style={{ marginLeft: "16px" }}>
-                Trip Dates: Commencement Date: {longDate(firstDate) || "—"}, End Date {longDate(lastDate) || "—"}.
+                Trip Dates: Commencement Date: <Ed value={longDate(firstDate)} placeholder="03rd June 2026" onChange={v => set("tripStart", v)} />, End Date <Ed value={longDate(lastDate)} placeholder="08th June 2026" onChange={v => set("tripEnd", v)} />.
               </div>
               <div className="l" style={{ marginLeft: "16px" }}>
                 Service Time: Start Time <Ed value={f.startTime} placeholder="06:00" onChange={v => set("startTime", v)} /> Hrs. End Time <Ed value={f.endTime} placeholder="23:30" onChange={v => set("endTime", v)} /> Hrs.
@@ -320,27 +344,56 @@ export default function BookingDocuments({ booking, onClose, onSaved }: {
                   {["Order No", "Order Date", "Invoice Date", "Details", "Driver", "Proforma Invoice No"].map(h => (
                     <th key={h} style={{ border: "1px solid #000", padding: "3px 4px", textAlign: "center", fontWeight: "bold" }}>{h}</th>
                   ))}
+                  <th className="rowdel" style={{ border: "none", width: "24px" }}></th>
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td className="c" style={{ border: "1px solid #000", padding: "3px 4px", textAlign: "center" }}>
-                    <Ed value={f.orderNo} placeholder="0014/2026" onChange={v => set("orderNo", v)} />
-                  </td>
-                  <td className="c" style={{ border: "1px solid #000", padding: "3px 4px", textAlign: "center" }}>{dmy(f.orderDate) || <Ed value="" placeholder="dd/mm/yyyy" onChange={() => {}} />}</td>
-                  <td className="c" style={{ border: "1px solid #000", padding: "3px 4px", textAlign: "center" }}>{dmy(isDN ? f.deliveryDate : f.invoiceDate)}</td>
-                  <td style={{ border: "1px solid #000", padding: "3px 4px" }}>
-                    <Ed block value={f.details} placeholder="One (1) Vehicle Hire for Transport Services..." onChange={v => set("details", v)} />
-                  </td>
-                  <td className="c" style={{ border: "1px solid #000", padding: "3px 4px", textAlign: "center" }}>
-                    <Ed value={f.drivers} placeholder="Driver" onChange={v => set("drivers", v)} />
-                  </td>
-                  <td className="c" style={{ border: "1px solid #000", padding: "3px 4px", textAlign: "center" }}>
-                    <Ed value={f.proformaNo} placeholder="ZT/VHI3/0174" onChange={v => set("proformaNo", v)} />
-                  </td>
-                </tr>
+                {orderRows.map((o, oi) => {
+                  const otd = { border: "1px solid #000", padding: "3px 4px" } as const;
+                  return (
+                    <tr key={oi}>
+                      {oi === 0 ? (
+                        <>
+                          <td className="c" style={{ ...otd, textAlign: "center" }} rowSpan={orderRows.length}>
+                            <Ed value={f.orderNo} placeholder="0014/2026" onChange={v => set("orderNo", v)} />
+                          </td>
+                          <td className="c" style={{ ...otd, textAlign: "center" }} rowSpan={orderRows.length}>
+                            <Ed value={dmy(f.orderDate)} placeholder="02/06/2026" onChange={v => set("orderDate", v)} />
+                          </td>
+                          <td className="c" style={{ ...otd, textAlign: "center" }} rowSpan={orderRows.length}>
+                            <Ed value={dmy(isDN ? f.deliveryDate : f.invoiceDate)} placeholder="11/06/2026" onChange={v => set(isDN ? "deliveryDate" : "invoiceDate", v)} />
+                          </td>
+                        </>
+                      ) : null}
+                      <td style={otd}>
+                        <Ed block value={o.details} placeholder="One (1) Vehicle Hire for Transport Services..." onChange={v => setOrderRow(oi, { details: v })} />
+                      </td>
+                      <td className="c" style={{ ...otd, textAlign: "center" }}>
+                        <Ed value={o.driver} placeholder="Driver" onChange={v => setOrderRow(oi, { driver: v })} />
+                      </td>
+                      {oi === 0 ? (
+                        <td className="c" style={{ ...otd, textAlign: "center" }} rowSpan={orderRows.length}>
+                          <Ed value={f.proformaNo} placeholder="ZT/VHI3/0174" onChange={v => set("proformaNo", v)} />
+                        </td>
+                      ) : null}
+                      <td className="rowdel" style={{ border: "none", textAlign: "center" }}>
+                        {orderRows.length > 1 && (
+                          <button onClick={() => removeOrderRow(oi)} className="text-red-500 hover:text-red-700" title="Remove">
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
+
+            <div className="addrow" style={{ marginTop: "6px" }}>
+              <button onClick={addOrderRow} className="flex items-center gap-1 text-xs text-gold hover:underline">
+                <Plus className="w-3 h-3" /> Add driver
+              </button>
+            </div>
 
             <div className="vdet" style={{ fontSize: "9pt", fontStyle: "italic", fontWeight: "bold", marginTop: "12px" }}>
               Vehicles Details: <Ed value={f.vehicleDesc} onChange={v => set("vehicleDesc", v)} /> Registration No <Ed value={f.plates} placeholder="T444DUN" onChange={v => set("plates", v)} />
@@ -367,15 +420,15 @@ export default function BookingDocuments({ booking, onClose, onSaved }: {
                       <td style={td}><Ed block value={r.description} placeholder="Dar - Kibaha - Dar" onChange={v => setItem(i, { description: v })} /></td>
                       {isDN ? (
                         <>
-                          <td style={{ ...td, textAlign: "center" }}>{longDate(r.start_date)}</td>
-                          <td style={{ ...td, textAlign: "center" }}>{longDate(r.end_date)}</td>
+                          <td style={{ ...td, textAlign: "center" }}><Ed value={longDate(r.start_date)} placeholder="21st June 2026" onChange={v => setItem(i, { start_date: v })} /></td>
+                          <td style={{ ...td, textAlign: "center" }}><Ed value={longDate(r.end_date)} placeholder="21st June 2026" onChange={v => setItem(i, { end_date: v })} /></td>
                           <td style={{ ...td, textAlign: "center" }}><Ed value={r.days} onChange={v => setItem(i, { days: v })} /></td>
                           <td style={{ ...td, textAlign: "center" }}><Ed value={r.service_type} placeholder="Travel" onChange={v => setItem(i, { service_type: v })} /></td>
                           <td style={{ ...td, textAlign: "center" }}><Ed value={r.destination_area} placeholder="Area" onChange={v => setItem(i, { destination_area: v })} /></td>
                         </>
                       ) : (
                         <>
-                          <td style={{ ...td, textAlign: "center" }}>{dmy(r.start_date)}{r.end_date && r.end_date !== r.start_date ? ` - ${dmy(r.end_date)}` : ""}</td>
+                          <td style={{ ...td, textAlign: "center" }}><Ed value={dmy(r.start_date) + (r.end_date && r.end_date !== r.start_date ? " - " + dmy(r.end_date) : "")} placeholder="03/06/2026" onChange={v => setItem(i, { start_date: v, end_date: "" })} /></td>
                           <td style={{ ...td, textAlign: "center" }}><Ed value={r.base_km} onChange={v => setItem(i, { base_km: v })} /></td>
                           <td style={{ ...td, textAlign: "right" }}><Ed value={r.unit_cost} placeholder="350,000" onChange={v => setItem(i, { unit_cost: v })} /></td>
                           <td style={{ ...td, textAlign: "center" }}><Ed value={r.extra_qty} onChange={v => setItem(i, { extra_qty: v })} /></td>
