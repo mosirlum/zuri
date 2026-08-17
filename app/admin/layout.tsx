@@ -7,7 +7,7 @@ import Link from "next/link";
 import {
   LayoutDashboard, Car, Users, CalendarCheck,
   ShieldAlert, DollarSign, BarChart3, MessageSquare,
-  LogOut, Menu, ChevronRight, UserCog, KeyRound,
+  LogOut, Menu, ChevronRight, UserCog, Settings,
 } from "lucide-react";
 
 const navItems = [
@@ -20,98 +20,12 @@ const navItems = [
   { label: "Reports", href: "/admin/reports", icon: BarChart3, roles: ["super_admin"] },
   { label: "Communication", href: "/admin/communication", icon: MessageSquare, roles: ["super_admin", "staff"] },
   { label: "Users", href: "/admin/users", icon: UserCog, roles: ["super_admin"] },
+  { label: "Settings", href: "/admin/settings", icon: Settings, roles: ["super_admin", "staff"] },
 ];
-
-function ChangePasswordModal({ onClose }: { onClose: () => void }) {
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
-
-  const handleSave = async () => {
-    setError("");
-    if (newPassword !== confirmPassword) {
-      setError("New password and confirmation do not match");
-      return;
-    }
-    setSaving(true);
-    try {
-      const res = await fetch("/api/me/password", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Something went wrong");
-        setSaving(false);
-        return;
-      }
-      setSuccess(true);
-      setSaving(false);
-    } catch {
-      setError("Network error — try again");
-      setSaving(false);
-    }
-  };
-
-  const inp = "w-full border border-ink/15 bg-paper text-ink px-3 py-2.5 rounded-lg text-sm outline-none focus:border-gold transition-colors";
-  const lbl = "block text-xs tracking-widest uppercase text-muted mb-1.5 font-medium";
-
-  return (
-    <div className="fixed inset-0 z-50 bg-ink/60 flex items-center justify-center p-4">
-      <div className="bg-paper rounded-2xl w-full max-w-sm">
-        <div className="px-6 py-4 border-b border-ink/10 flex items-center justify-between">
-          <h2 className="font-display text-xl font-medium">Change Password</h2>
-          <button onClick={onClose} className="text-muted hover:text-ink text-xl">✕</button>
-        </div>
-
-        {success ? (
-          <div className="p-6 text-center space-y-3">
-            <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
-              Password updated successfully.
-            </p>
-            <button onClick={onClose} className="px-5 py-2.5 text-sm bg-gold text-ink rounded-xl font-medium">Done</button>
-          </div>
-        ) : (
-          <>
-            <div className="p-6 space-y-4">
-              {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-xl">{error}</div>
-              )}
-              <div>
-                <label className={lbl}>Current Password</label>
-                <input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} autoComplete="off" className={inp} />
-              </div>
-              <div>
-                <label className={lbl}>New Password</label>
-                <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} autoComplete="off" className={inp} />
-              </div>
-              <div>
-                <label className={lbl}>Confirm New Password</label>
-                <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} autoComplete="off" className={inp} />
-              </div>
-            </div>
-            <div className="px-6 py-4 border-t border-ink/10 flex gap-3 justify-end">
-              <button onClick={onClose} className="px-5 py-2.5 text-sm text-muted border border-ink/15 rounded-xl">Cancel</button>
-              <button onClick={handleSave} disabled={saving || !currentPassword || !newPassword || !confirmPassword}
-                className="px-5 py-2.5 text-sm bg-gold text-ink rounded-xl font-medium hover:bg-gold/90 disabled:opacity-50">
-                {saving ? "Saving..." : "Update Password"}
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
   const pathname = usePathname();
 
   useEffect(() => {
@@ -206,13 +120,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </div>
           </div>
           <button
-            onClick={() => setShowPasswordModal(true)}
-            className="flex items-center gap-2 w-full px-3 py-2 text-sm text-paper/60 hover:text-gold transition-colors rounded-lg hover:bg-gold/10"
-          >
-            <KeyRound className="w-4 h-4" />
-            Change Password
-          </button>
-          <button
             onClick={handleLogout}
             className="flex items-center gap-2 w-full px-3 py-2 text-sm text-paper/60 hover:text-red-400 transition-colors rounded-lg hover:bg-red-500/10"
           >
@@ -241,8 +148,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </header>
         <main className="flex-1 p-6 lg:p-8 overflow-auto">{children}</main>
       </div>
-
-      {showPasswordModal && <ChangePasswordModal onClose={() => setShowPasswordModal(false)} />}
     </div>
   );
 }

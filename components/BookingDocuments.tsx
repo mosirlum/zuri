@@ -27,6 +27,29 @@ const emptyItem = (): LineItem => ({
 const num = (v: any) => parseFloat(String(v ?? "").replace(/,/g, "")) || 0;
 const money = (v: any) => num(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+// Ray types dates however he thinks of them — 11/06/2026 in a table cell,
+// "11th June 2026" in the letterhead. Both mean the same day, so they're
+// pulled back to a single stored value and each place renders its own style.
+const parseLoose = (input: string): string => {
+  const raw = (input || "").trim();
+  if (!raw) return "";
+
+  const slash = raw.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+  if (slash) {
+    const [, d, m, y] = slash;
+    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+
+  const words = raw.replace(/(\d+)(st|nd|rd|th)/i, "$1");
+  const dt = new Date(words);
+  if (!isNaN(dt.getTime())) {
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+  }
+
+  // Not a date we recognise — keep exactly what was typed.
+  return raw;
+};
+
 const dmy = (d: string) => {
   if (!d) return "";
   const dt = new Date(d);
@@ -83,6 +106,17 @@ export default function BookingDocuments({ booking, onClose, onSaved }: {
   const [mode, setMode] = useState<"dn" | "inv">("inv");
   const [saving, setSaving] = useState(false);
   const [savedOk, setSavedOk] = useState(false);
+  const [showSecondEfd, setShowSecondEfd] = useState(false);
+
+  // Usually only the trailing number changes, so each reference starts
+  // pre-filled — but the whole string stays editable for the times a middle
+  // segment needs to move too.
+  const REF_DEFAULT = {
+    delivery: "ZT/DN/72/72/",
+    invoice: "ZT/AB/T172/72/",
+    tax: "ZTCH/VHTI3/",
+    proforma: "ZT/VHI3/",
+  };
 
   const [f, setF] = useState({
     deliveryRef: saved.deliveryRef || "",
@@ -106,6 +140,7 @@ export default function BookingDocuments({ booking, onClose, onSaved }: {
     extraKmRate: saved.extraKmRate || "2,000",
     details: saved.details || "",
     efdReceipt: saved.efdReceipt || "",
+    efdReceipt2: saved.efdReceipt2 || "",
     footerArea: saved.footerArea || "",
     plates: saved.plates || platesAuto,
     drivers: saved.drivers || driversAuto,
@@ -287,8 +322,13 @@ export default function BookingDocuments({ booking, onClose, onSaved }: {
             </div>
 
             <div className="band" style={{ display: "flex", justifyContent: "space-between", marginTop: "8px", fontSize: "10pt" }}>
-              <div>Ref No <Ed value={isDN ? f.deliveryRef : f.invoiceRef} placeholder={isDN ? "ZT/DN/72/72/0180" : "ZT/AB/T172/72/0174"} onChange={v => set(isDN ? "deliveryRef" : "invoiceRef", v)} /></div>
-              <div><b><Ed value={longDate(isDN ? f.deliveryDate : f.invoiceDate)} placeholder="11th June 2026" onChange={v => set(isDN ? "deliveryDate" : "invoiceDate", v)} /></b></div>
+              <div>
+                Ref No <Ed
+                  value={(isDN ? f.deliveryRef : f.invoiceRef) || (isDN ? REF_DEFAULT.delivery : REF_DEFAULT.invoice)}
+                  placeholder={isDN ? "ZT/DN/72/72/0180" : "ZT/AB/T172/72/0174"}
+                  onChange={v => set(isDN ? "deliveryRef" : "invoiceRef", v)} />
+              </div>
+              <div><b><Ed value={longDate(isDN ? f.deliveryDate : f.invoiceDate)} placeholder="11th June 2026" onChange={v => set(isDN ? "deliveryDate" : "invoiceDate", parseLoose(v))} /></b></div>
             </div>
 
             <div className="band" style={{ display: "flex", justifyContent: "space-between" }}>
@@ -300,7 +340,7 @@ export default function BookingDocuments({ booking, onClose, onSaved }: {
               </div>
               {!isDN && (
                 <div style={{ textAlign: "right", fontSize: "10pt", fontStyle: "italic", marginTop: "6px" }}>
-                  <b>Tax Invoice No: <Ed value={f.taxInvoiceNo} placeholder="ZTCH/VHTI3/0174" onChange={v => set("taxInvoiceNo", v)} /></b>
+                  <b>Tax Invoice No: <Ed value={f.taxInvoiceNo || REF_DEFAULT.tax} placeholder="ZTCH/VHTI3/0174" onChange={v => set("taxInvoiceNo", v)} /></b>
                 </div>
               )}
             </div>
@@ -331,7 +371,7 @@ export default function BookingDocuments({ booking, onClose, onSaved }: {
                 </>
               )}
               <div className="l" style={{ marginLeft: "16px" }}>
-                Trip Dates: Commencement Date: <Ed value={longDate(firstDate)} placeholder="03rd June 2026" onChange={v => set("tripStart", v)} />, End Date <Ed value={longDate(lastDate)} placeholder="08th June 2026" onChange={v => set("tripEnd", v)} />.
+                Trip Dates: Commencement Date: <Ed value={longDate(firstDate)} placeholder="03rd June 2026" onChange={v => set("tripStart", parseLoose(v))} />, End Date <Ed value={longDate(lastDate)} placeholder="08th June 2026" onChange={v => set("tripEnd", parseLoose(v))} />.
               </div>
               <div className="l" style={{ marginLeft: "16px" }}>
                 Service Time: Start Time <Ed value={f.startTime} placeholder="06:00" onChange={v => set("startTime", v)} /> Hrs. End Time <Ed value={f.endTime} placeholder="23:30" onChange={v => set("endTime", v)} /> Hrs.
@@ -358,10 +398,10 @@ export default function BookingDocuments({ booking, onClose, onSaved }: {
                             <Ed value={f.orderNo} placeholder="0014/2026" onChange={v => set("orderNo", v)} />
                           </td>
                           <td className="c" style={{ ...otd, textAlign: "center" }} rowSpan={orderRows.length}>
-                            <Ed value={dmy(f.orderDate)} placeholder="02/06/2026" onChange={v => set("orderDate", v)} />
+                            <Ed value={dmy(f.orderDate)} placeholder="02/06/2026" onChange={v => set("orderDate", parseLoose(v))} />
                           </td>
                           <td className="c" style={{ ...otd, textAlign: "center" }} rowSpan={orderRows.length}>
-                            <Ed value={dmy(isDN ? f.deliveryDate : f.invoiceDate)} placeholder="11/06/2026" onChange={v => set(isDN ? "deliveryDate" : "invoiceDate", v)} />
+                            <Ed value={dmy(isDN ? f.deliveryDate : f.invoiceDate)} placeholder="11/06/2026" onChange={v => set(isDN ? "deliveryDate" : "invoiceDate", parseLoose(v))} />
                           </td>
                         </>
                       ) : null}
@@ -373,7 +413,7 @@ export default function BookingDocuments({ booking, onClose, onSaved }: {
                       </td>
                       {oi === 0 ? (
                         <td className="c" style={{ ...otd, textAlign: "center" }} rowSpan={orderRows.length}>
-                          <Ed value={f.proformaNo} placeholder="ZT/VHI3/0174" onChange={v => set("proformaNo", v)} />
+                          <Ed value={f.proformaNo || REF_DEFAULT.proforma} placeholder="ZT/VHI3/0174" onChange={v => set("proformaNo", v)} />
                         </td>
                       ) : null}
                       <td className="rowdel" style={{ border: "none", textAlign: "center" }}>
@@ -420,15 +460,15 @@ export default function BookingDocuments({ booking, onClose, onSaved }: {
                       <td style={td}><Ed block value={r.description} placeholder="Dar - Kibaha - Dar" onChange={v => setItem(i, { description: v })} /></td>
                       {isDN ? (
                         <>
-                          <td style={{ ...td, textAlign: "center" }}><Ed value={longDate(r.start_date)} placeholder="21st June 2026" onChange={v => setItem(i, { start_date: v })} /></td>
-                          <td style={{ ...td, textAlign: "center" }}><Ed value={longDate(r.end_date)} placeholder="21st June 2026" onChange={v => setItem(i, { end_date: v })} /></td>
+                          <td style={{ ...td, textAlign: "center" }}><Ed value={longDate(r.start_date)} placeholder="21st June 2026" onChange={v => setItem(i, { start_date: parseLoose(v) })} /></td>
+                          <td style={{ ...td, textAlign: "center" }}><Ed value={longDate(r.end_date)} placeholder="21st June 2026" onChange={v => setItem(i, { end_date: parseLoose(v) })} /></td>
                           <td style={{ ...td, textAlign: "center" }}><Ed value={r.days} onChange={v => setItem(i, { days: v })} /></td>
                           <td style={{ ...td, textAlign: "center" }}><Ed value={r.service_type} placeholder="Travel" onChange={v => setItem(i, { service_type: v })} /></td>
                           <td style={{ ...td, textAlign: "center" }}><Ed value={r.destination_area} placeholder="Area" onChange={v => setItem(i, { destination_area: v })} /></td>
                         </>
                       ) : (
                         <>
-                          <td style={{ ...td, textAlign: "center" }}><Ed value={dmy(r.start_date) + (r.end_date && r.end_date !== r.start_date ? " - " + dmy(r.end_date) : "")} placeholder="03/06/2026" onChange={v => setItem(i, { start_date: v, end_date: "" })} /></td>
+                          <td style={{ ...td, textAlign: "center" }}><Ed value={dmy(r.start_date) + (r.end_date && r.end_date !== r.start_date ? " - " + dmy(r.end_date) : "")} placeholder="03/06/2026" onChange={v => setItem(i, { start_date: parseLoose(v), end_date: "" })} /></td>
                           <td style={{ ...td, textAlign: "center" }}><Ed value={r.base_km} onChange={v => setItem(i, { base_km: v })} /></td>
                           <td style={{ ...td, textAlign: "right" }}><Ed value={r.unit_cost} placeholder="350,000" onChange={v => setItem(i, { unit_cost: v })} /></td>
                           <td style={{ ...td, textAlign: "center" }}><Ed value={r.extra_qty} onChange={v => setItem(i, { extra_qty: v })} /></td>
@@ -502,7 +542,17 @@ export default function BookingDocuments({ booking, onClose, onSaved }: {
                   Amount in Words Shillings: {amountInWords(grandTotal)}
                 </div>
                 <div className="efd" style={{ fontSize: "10pt", fontWeight: "bold", marginTop: "10px" }}>
-                  EFD Receipt No <Ed value={f.efdReceipt} placeholder="04627C159" onChange={v => set("efdReceipt", v)} /> of Tshs {money(grandTotal)} Attached herewith
+                  EFD Receipt No <Ed value={f.efdReceipt} placeholder="04627C159" onChange={v => set("efdReceipt", v)} />
+                  {(f.efdReceipt2 || showSecondEfd) && (
+                    <> and <Ed value={f.efdReceipt2} placeholder="04627C160" onChange={v => set("efdReceipt2", v)} /></>
+                  )}
+                  {" "}of Tshs {money(grandTotal)} Attached herewith
+                  {!f.efdReceipt2 && !showSecondEfd && (
+                    <button onClick={() => setShowSecondEfd(true)}
+                      className="rowdel ml-2 text-xs text-gold hover:underline font-normal">
+                      + second receipt
+                    </button>
+                  )}
                 </div>
                 <div className="pay" style={{ display: "flex", justifyContent: "space-between", marginTop: "14px", fontSize: "10pt" }}>
                   <div><b>Please Pay: Account Details:</b></div>
