@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Plus, X, FileText, Truck, Printer, Save } from "lucide-react";
 import { invoiceConfig as cfg, amountInWords } from "@/lib/invoice-config";
 
@@ -137,7 +137,7 @@ export default function BookingDocuments({ booking, onClose, onSaved }: {
     invoiceRef: saved.invoiceRef || "",
     taxInvoiceNo: saved.taxInvoiceNo || booking.invoice_number || "",
     proformaNo: saved.proformaNo || "",
-    orderNo: saved.orderNo || "",
+    orderNo: saved.orderNo || `0001/${new Date().getFullYear()}`,
     orderDate: saved.orderDate || "",
     tripStart: saved.tripStart || "",
     tripEnd: saved.tripEnd || "",
@@ -152,7 +152,7 @@ export default function BookingDocuments({ booking, onClose, onSaved }: {
     baseKm: saved.baseKm || "100",
     unitCost: saved.unitCost || "",
     extraKmRate: saved.extraKmRate || "2,000",
-    details: saved.details || "",
+    details: saved.details || "One (1) Vehicle Hire for Transport Services",
     footerArea: saved.footerArea || "",
     plates: saved.plates || platesAuto,
     drivers: saved.drivers || driversAuto,
@@ -175,14 +175,19 @@ export default function BookingDocuments({ booking, onClose, onSaved }: {
   const [orderRows, setOrderRows] = useState<Array<{ driver: string; details: string }>>(
     saved.orderRows?.length
       ? saved.orderRows
-      : [{ driver: driversAuto, details: saved.details || "" }]
+      : [{ driver: driversAuto, details: saved.details || "One (1) Vehicle Hire for Transport Services" }]
   );
 
   const setOrderRow = (i: number, patch: any) => {
     setOrderRows(prev => prev.map((r, idx) => idx === i ? { ...r, ...patch } : r));
     setSavedOk(false);
   };
-  const addOrderRow = () => setOrderRows(prev => [...prev, { driver: "", details: "" }]);
+  // A second driver on the same job repeats the same wording, so the new line
+  // starts from the one above rather than blank.
+  const addOrderRow = () => setOrderRows(prev => [
+    ...prev,
+    { driver: "", details: prev[prev.length - 1]?.details || "" },
+  ]);
   const removeOrderRow = (i: number) => setOrderRows(prev => prev.filter((_, idx) => idx !== i));
 
   const set = (k: string, v: string) => { setF(p => ({ ...p, [k]: v })); setSavedOk(false); };
@@ -190,11 +195,30 @@ export default function BookingDocuments({ booking, onClose, onSaved }: {
     setItems(prev => prev.map((r, idx) => idx === i ? { ...r, ...patch } : r));
     setSavedOk(false);
   };
-  const addItem = () => setItems(prev => [...prev, emptyItem()]);
+  // Extra legs of one job share the route and the rate — only dates and totals
+  // change — so a new row copies the last one and leaves those blank.
+  const addItem = () => setItems(prev => {
+    const last = prev[prev.length - 1];
+    if (!last) return [emptyItem()];
+    return [...prev, {
+      ...last,
+      start_date: "",
+      end_date: "",
+      total: "",
+    }];
+  });
   const removeItem = (i: number) => setItems(prev => prev.filter((_, idx) => idx !== i));
 
   const grandTotal = items.reduce((s, r) => s + num(r.total), 0);
   const efdTotal = efdReceipts.reduce((s, r) => s + num(r.amount), 0);
+
+  // A single receipt normally covers the whole invoice, so it's filled in once
+  // the line items add up — but it stays editable for part payments.
+  useEffect(() => {
+    if (efdReceipts.length === 1 && !efdReceipts[0].amount && grandTotal > 0) {
+      setEfdReceipts([{ ...efdReceipts[0], amount: money(grandTotal) }]);
+    }
+  }, [grandTotal]);
 
   // Span the whole job rather than just the first row, so adding a later leg
   // moves the end date on its own. A typed override always wins.
@@ -556,22 +580,19 @@ export default function BookingDocuments({ booking, onClose, onSaved }: {
                 </div>
                 <div className="efd" style={{ fontSize: "10pt", fontWeight: "bold", marginTop: "10px" }}>
                   {efdReceipts.map((r, i) => (
-                    <span key={i}>
-                      {i > 0 ? " and " : ""}
+                    <div key={i}>
+                      {i > 0 ? "and " : ""}
                       EFD Receipt No <Ed value={r.no} placeholder="04627C159" onChange={v => setEfd(i, { no: v })} />
-                      {" "}of Tshs <Ed
-                        value={r.amount || (efdReceipts.length === 1 ? money(grandTotal) : "")}
-                        placeholder="0.00"
-                        onChange={v => setEfd(i, { amount: v })} />
+                      {" "}of Tshs <Ed value={r.amount} placeholder="0.00" onChange={v => setEfd(i, { amount: v })} />
+                      {i === efdReceipts.length - 1 ? " Attached herewith" : ""}
                       {efdReceipts.length > 1 && (
                         <button onClick={() => removeEfd(i)}
                           className="rowdel ml-1 text-red-500 hover:text-red-700 font-normal align-middle" title="Remove">
                           <X className="w-3 h-3 inline" />
                         </button>
                       )}
-                    </span>
+                    </div>
                   ))}
-                  {" "}Attached herewith
                   <button onClick={addEfd}
                     className="rowdel ml-2 text-xs text-gold hover:underline font-normal">
                     + receipt
