@@ -106,7 +106,21 @@ export default function BookingDocuments({ booking, onClose, onSaved }: {
   const [mode, setMode] = useState<"dn" | "inv">("inv");
   const [saving, setSaving] = useState(false);
   const [savedOk, setSavedOk] = useState(false);
-  const [showSecondEfd, setShowSecondEfd] = useState(false);
+  // A job can be receipted in more than one go — one receipt for a million,
+  // another for the balance — so each carries its own number and amount.
+  const [efdReceipts, setEfdReceipts] = useState<Array<{ no: string; amount: string }>>(
+    saved.efdReceipts?.length
+      ? saved.efdReceipts
+      : [{ no: saved.efdReceipt || "", amount: saved.efdAmount || "" }]
+        .concat(saved.efdReceipt2 ? [{ no: saved.efdReceipt2, amount: "" }] : [])
+  );
+
+  const setEfd = (i: number, patch: any) => {
+    setEfdReceipts(prev => prev.map((r, idx) => idx === i ? { ...r, ...patch } : r));
+    setSavedOk(false);
+  };
+  const addEfd = () => setEfdReceipts(prev => [...prev, { no: "", amount: "" }]);
+  const removeEfd = (i: number) => setEfdReceipts(prev => prev.filter((_, idx) => idx !== i));
 
   // Usually only the trailing number changes, so each reference starts
   // pre-filled — but the whole string stays editable for the times a middle
@@ -139,8 +153,6 @@ export default function BookingDocuments({ booking, onClose, onSaved }: {
     unitCost: saved.unitCost || "",
     extraKmRate: saved.extraKmRate || "2,000",
     details: saved.details || "",
-    efdReceipt: saved.efdReceipt || "",
-    efdReceipt2: saved.efdReceipt2 || "",
     footerArea: saved.footerArea || "",
     plates: saved.plates || platesAuto,
     drivers: saved.drivers || driversAuto,
@@ -182,6 +194,7 @@ export default function BookingDocuments({ booking, onClose, onSaved }: {
   const removeItem = (i: number) => setItems(prev => prev.filter((_, idx) => idx !== i));
 
   const grandTotal = items.reduce((s, r) => s + num(r.total), 0);
+  const efdTotal = efdReceipts.reduce((s, r) => s + num(r.amount), 0);
 
   // Span the whole job rather than just the first row, so adding a later leg
   // moves the end date on its own. A typed override always wins.
@@ -197,7 +210,7 @@ export default function BookingDocuments({ booking, onClose, onSaved }: {
     await fetch("/api/admin/bookings/documents", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: booking.id, document_data: { ...f, items, orderRows } }),
+      body: JSON.stringify({ id: booking.id, document_data: { ...f, items, orderRows, efdReceipts } }),
     });
     setSaving(false);
     setSavedOk(true);
@@ -542,16 +555,31 @@ export default function BookingDocuments({ booking, onClose, onSaved }: {
                   Amount in Words Shillings: {amountInWords(grandTotal)}
                 </div>
                 <div className="efd" style={{ fontSize: "10pt", fontWeight: "bold", marginTop: "10px" }}>
-                  EFD Receipt No <Ed value={f.efdReceipt} placeholder="04627C159" onChange={v => set("efdReceipt", v)} />
-                  {(f.efdReceipt2 || showSecondEfd) && (
-                    <> and <Ed value={f.efdReceipt2} placeholder="04627C160" onChange={v => set("efdReceipt2", v)} /></>
-                  )}
-                  {" "}of Tshs {money(grandTotal)} Attached herewith
-                  {!f.efdReceipt2 && !showSecondEfd && (
-                    <button onClick={() => setShowSecondEfd(true)}
-                      className="rowdel ml-2 text-xs text-gold hover:underline font-normal">
-                      + second receipt
-                    </button>
+                  {efdReceipts.map((r, i) => (
+                    <span key={i}>
+                      {i > 0 ? " and " : ""}
+                      EFD Receipt No <Ed value={r.no} placeholder="04627C159" onChange={v => setEfd(i, { no: v })} />
+                      {" "}of Tshs <Ed
+                        value={r.amount || (efdReceipts.length === 1 ? money(grandTotal) : "")}
+                        placeholder="0.00"
+                        onChange={v => setEfd(i, { amount: v })} />
+                      {efdReceipts.length > 1 && (
+                        <button onClick={() => removeEfd(i)}
+                          className="rowdel ml-1 text-red-500 hover:text-red-700 font-normal align-middle" title="Remove">
+                          <X className="w-3 h-3 inline" />
+                        </button>
+                      )}
+                    </span>
+                  ))}
+                  {" "}Attached herewith
+                  <button onClick={addEfd}
+                    className="rowdel ml-2 text-xs text-gold hover:underline font-normal">
+                    + receipt
+                  </button>
+                  {efdTotal > 0 && Math.round(efdTotal) !== Math.round(grandTotal) && (
+                    <span className="rowdel ml-2 text-xs text-amber-700 font-normal">
+                      receipts total {money(efdTotal)} vs invoice {money(grandTotal)}
+                    </span>
                   )}
                 </div>
                 <div className="pay" style={{ display: "flex", justifyContent: "space-between", marginTop: "14px", fontSize: "10pt" }}>
