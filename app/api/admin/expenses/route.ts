@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { toAmount, toText, toDate } from "@/lib/validate";
 import { neon } from "@neondatabase/serverless";
 
 const sql = neon(process.env.DATABASE_URL!);
@@ -42,16 +43,21 @@ export async function POST(req: NextRequest) {
       expense_date, expense_type, period_months, next_due_date
     } = body;
 
+    const amt = toAmount(amount);
+    if (amt <= 0 || !toText(category, 60)) {
+      return NextResponse.json({ error: "Category and an amount above 0 are required" }, { status: 400 });
+    }
+
     const result = await sql`
       INSERT INTO expenses (
         category, description, amount, currency,
         expense_date, expense_type, period_months, next_due_date
       ) VALUES (
-        ${category},
-        ${description},
-        ${parseFloat(amount)},
+        ${toText(category, 60)},
+        ${toText(description, 300)},
+        ${amt},
         ${currency || 'TZS'},
-        ${expense_date || new Date().toISOString().split("T")[0]},
+        ${toDate(expense_date) || new Date().toISOString().split("T")[0]},
         ${expense_type || 'monthly'},
         ${parseInt(period_months) || 1},
         ${next_due_date || null}

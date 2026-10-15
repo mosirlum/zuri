@@ -1,24 +1,28 @@
-﻿import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { NextRequest, NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
+import { requireBoss, isGuardFailure } from "@/lib/guards";
+import { toId } from "@/lib/validate";
+import { logError } from "@/lib/error-log";
 
 const sql = neon(process.env.DATABASE_URL!);
 
 export async function DELETE(req: NextRequest) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const guard = await requireBoss();
+  if (isGuardFailure(guard)) return guard.response;
 
   try {
     const body = await req.json();
-    if (!body.id) return NextResponse.json({ error: "Missing vehicle id" }, { status: 400 });
+    const id = toId(body?.id);
+    if (!id) return NextResponse.json({ error: "Missing vehicle id" }, { status: 400 });
 
-    // A vehicle with trip history can't be deleted — removing it would wipe the
-    // record of what those trips earned and cost, and break per-vehicle reports.
-    const bookingCount = await sql`
-      SELECT COUNT(*)::int as count FROM bookings WHERE vehicle_id = ${body.id}
+    // A car with trip history can't be deleted — it would erase what those
+    // trips earned and cost. Counts both single-car and multi-car bookings.
+    const rows = await sql`
+      SELECT
+        (SELECT COUNT(*)::int FROM bookings WHERE vehicle_id = ${id}) +
+        (SELECT COUNT(*)::int FROM booking_vehicles WHERE vehicle_id = ${id}) AS count
     `;
-    const count = bookingCount[0]?.count || 0;
-
+    const count = rows[0]?.count || 0;
     if (count > 0) {
       return NextResponse.json({
         error: "has_history",
@@ -27,15 +31,11 @@ export async function DELETE(req: NextRequest) {
       }, { status: 409 });
     }
 
-    const result = await sql`DELETE FROM vehicles WHERE id = ${body.id} RETURNING id`;
-    if (result.length === 0) {
-      return NextResponse.json({ error: "Vehicle not found" }, { status: 404 });
-    }
-
+    const result = await sql`DELETE FROM vehicles WHERE id = ${id} RETURNING id`;
+    if (result.length === 0) return NextResponse.json({ error: "Vehicle not found" }, { status: 404 });
     return NextResponse.json({ success: true });
   } catch (err) {
-    console.error(err);
-    return NextResponse.json({ error: "Database error" }, { status: 500 });
+    await logError("vehicles/delete", err);
+    return NextResponse.json({ error: "Could not delete vehicle" }, { status: 500 });
   }
 }
-

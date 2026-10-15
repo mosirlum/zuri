@@ -16,13 +16,11 @@ interface AppUser {
 const roleColors: Record<string, string> = {
   super_admin: "bg-gold/20 text-gold border border-gold/30",
   staff: "bg-blue-100 text-blue-700",
-  driver: "bg-gray-100 text-gray-600",
 };
 
 const roleLabels: Record<string, string> = {
   super_admin: "Boss / Super Admin",
   staff: "Staff",
-  driver: "Driver",
 };
 
 function DeleteUserModal({ user, onClose, onDeleted }: {
@@ -201,7 +199,6 @@ function UserForm({ user, onClose, onSave }: {
             <select value={role} onChange={e => setRole(e.target.value)} className={sel}>
               <option value="staff">Staff (no Finance / Reports / Users)</option>
               <option value="super_admin">Boss / Super Admin (full access)</option>
-              <option value="driver">Driver (driver portal only)</option>
             </select>
           </div>
 
@@ -268,7 +265,7 @@ export default function UsersPage() {
           <h1 className="font-display text-3xl font-medium text-ink">
             User <em className="italic text-gold">Management</em>
           </h1>
-          <p className="text-muted text-sm mt-1">Add staff and drivers, control what they can see.</p>
+          <p className="text-muted text-sm mt-1">Who can sign in, and what they can see.</p>
         </div>
         <button onClick={() => { setEditUser(null); setShowForm(true); }}
           className="flex items-center gap-2 bg-ink text-paper px-5 py-2.5 text-sm font-medium hover:bg-gold transition-colors rounded-xl">

@@ -18,6 +18,7 @@ export default function AdminDashboard() {
     totalVehicles: 0, availableVehicles: 0,
     totalDrivers: 0, availableDrivers: 0,
     confirmedBookings: 0, expiringDocuments: 0,
+    vehiclesOnHire: 0, vehiclesBooked: 0, driversOnDuty: 0, driversBooked: 0,
   });
   const [expiringDocs, setExpiringDocs] = useState<any[]>([]);
   const [recentBookings, setRecentBookings] = useState<any[]>([]);
@@ -65,6 +66,7 @@ export default function AdminDashboard() {
   const fleetSplit = [
     { key: "available", label: "Available", count: vehicles.filter(v => v.status === "available").length, color: "#16a34a" },
     { key: "on_hire", label: "On Hire", count: vehicles.filter(v => v.status === "on_hire").length, color: "#2563eb" },
+    { key: "booked", label: "Booked", count: vehicles.filter(v => v.status === "booked").length, color: "#b8843a" },
     { key: "maintenance", label: "Maintenance", count: vehicles.filter(v => v.status === "maintenance").length, color: "#d97706" },
   ];
   const fleetTotal = vehicles.length || 1;
@@ -126,12 +128,32 @@ export default function AdminDashboard() {
       </div>
 
       <div className={`grid grid-cols-2 ${isBoss ? "lg:grid-cols-5" : "lg:grid-cols-4"} gap-4`}>
-        <StatCard icon={Car} label="Vehicles Available" value={`${stats.availableVehicles}/${stats.totalVehicles}`} color="gold" sub="of total fleet" />
-        <StatCard icon={Users} label="Drivers Available" value={`${stats.availableDrivers}/${stats.totalDrivers}`} color="ink" sub="ready to dispatch" />
-        <StatCard icon={CalendarCheck} label="Confirmed Bookings" value={stats.confirmedBookings.toString()} color="gold" sub="awaiting completion" />
-        <StatCard icon={ShieldAlert} label="Expiring Docs" value={stats.expiringDocuments.toString()} color={stats.expiringDocuments > 0 ? "red" : "green"} sub="within 30 days" />
+        <StatCard icon={Car} label="Vehicles Free Today"
+          value={`${stats.availableVehicles}/${stats.totalVehicles}`} color="gold"
+          sub={[
+            stats.vehiclesOnHire ? `${stats.vehiclesOnHire} on hire` : null,
+            stats.vehiclesBooked ? `${stats.vehiclesBooked} booked ahead` : null,
+          ].filter(Boolean).join(" · ") || "none out"}
+          href="/admin/fleet" />
+
+        <StatCard icon={Users} label="Drivers Free Today"
+          value={`${stats.availableDrivers}/${stats.totalDrivers}`} color="ink"
+          sub={[
+            stats.driversOnDuty ? `${stats.driversOnDuty} on duty` : null,
+            stats.driversBooked ? `${stats.driversBooked} booked ahead` : null,
+          ].filter(Boolean).join(" · ") || "none out"}
+          href="/admin/drivers" />
+
+        <StatCard icon={CalendarCheck} label="Confirmed Bookings"
+          value={stats.confirmedBookings.toString()} color="gold" sub="awaiting completion"
+          href="/admin/bookings" />
+
+        <StatCard icon={ShieldAlert} label="Expiring Docs"
+          value={stats.expiringDocuments.toString()}
+          color={stats.expiringDocuments > 0 ? "red" : "green"} sub="within 30 days"
+          href="/admin/compliance" />
         {isBoss && (
-          <StatCard icon={DollarSign} label="Outstanding" value={money(outstanding)} color={outstanding > 0 ? "red" : "green"} sub="TZS awaiting payment" />
+          <StatCard icon={DollarSign} label="Outstanding" value={money(outstanding)} color={outstanding > 0 ? "red" : "green"} sub="TZS awaiting payment" href="/admin/bookings" />
         )}
       </div>
 
@@ -313,8 +335,8 @@ function QuickAction({ href, icon: Icon, label }: { href: string; icon: any; lab
   );
 }
 
-function StatCard({ icon: Icon, label, value, color, sub }: {
-  icon: any; label: string; value: string; color: string; sub: string;
+function StatCard({ icon: Icon, label, value, color, sub, href }: {
+  icon: any; label: string; value: string; color: string; sub: string; href?: string;
 }) {
   const colors: Record<string, string> = {
     gold: "bg-gold/10 text-gold border-gold/20",
@@ -322,14 +344,27 @@ function StatCard({ icon: Icon, label, value, color, sub }: {
     red: "bg-red-50 text-red-600 border-red-200",
     green: "bg-green-50 text-green-600 border-green-200",
   };
-  return (
-    <div className="bg-paper rounded-2xl border border-ink/10 p-5">
+  const inner = (
+    <>
       <div className={`inline-flex items-center justify-center w-10 h-10 rounded-xl border mb-3 ${colors[color]}`}>
         <Icon className="w-5 h-5" />
       </div>
       <div className="font-display text-3xl font-medium text-ink leading-none mb-1">{value}</div>
       <div className="text-sm font-medium text-ink mb-0.5">{label}</div>
       <div className="text-xs text-muted">{sub}</div>
-    </div>
+    </>
   );
+
+  // Every figure here answers a question the person will want to follow up on,
+  // so the card takes them to the list behind it.
+  if (href) {
+    return (
+      <Link href={href}
+        className="bg-paper rounded-2xl border border-ink/10 p-5 block transition-all hover:border-gold/40 hover:bg-gold/5">
+        {inner}
+      </Link>
+    );
+  }
+
+  return <div className="bg-paper rounded-2xl border border-ink/10 p-5">{inner}</div>;
 }

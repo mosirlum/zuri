@@ -15,6 +15,10 @@ export async function PUT(req: NextRequest) {
     const body = await req.json();
     if (!body.id) return NextResponse.json({ error: "Missing booking id" }, { status: 400 });
 
+    if (JSON.stringify(body.document_data || {}).length > 200000) {
+      return NextResponse.json({ error: "Document is too large" }, { status: 413 });
+    }
+
     const result = await sql`
       UPDATE bookings SET
         document_data = ${JSON.stringify(body.document_data || {})}::jsonb,

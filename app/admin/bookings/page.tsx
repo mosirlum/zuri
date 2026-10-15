@@ -630,17 +630,48 @@ function BookingForm({ booking, onClose, onSave }: { booking?: any; onClose: () 
   // A car already picked on another row shouldn't be selectable twice.
   const takenIds = rows.map(r => r.vehicle_id).filter(Boolean);
 
+  // Ask the server who else is out on these dates, so a clash shows while
+  // choosing rather than after saving.
+  const [busy, setBusy] = useState<{ vehicles: any; drivers: any }>({ vehicles: {}, drivers: {} });
+  useEffect(() => {
+    if (!pickupDatetime) { setBusy({ vehicles: {}, drivers: {} }); return; }
+    const to = returnDatetime || dropoffDatetime || pickupDatetime;
+    const params = new URLSearchParams({ from: pickupDatetime, to });
+    if (booking?.id) params.set("exclude", String(booking.id));
+    fetch(`/api/admin/availability?${params}`)
+      .then(r => r.json())
+      .then(d => setBusy({ vehicles: d.vehicles || {}, drivers: d.drivers || {} }))
+      .catch(() => setBusy({ vehicles: {}, drivers: {} }));
+  }, [pickupDatetime, dropoffDatetime, returnDatetime, booking?.id]);
+
+  const clashingRows = rows.filter(r =>
+    (r.vehicle_id && busy.vehicles[r.vehicle_id]) || (r.driver_id && busy.drivers[r.driver_id])
+  );
+
   // A job that leaves Dar keeps the car out overnight, so the return date is
   // what tells us how many days the driver was away.
   const needsReturn = !!dropRegion && dropRegion !== "Dar es Salaam";
 
   const rowValid = (r: any) =>
     r.source === "borrowed" ? !!(r.borrowed_vehicle_desc && r.borrowed_owner_name) : !!r.vehicle_id;
-  const canSave = customerName && rows.length > 0 && rows.every(rowValid);
+  // Caught in the form as well as on the server, so the mistake is obvious
+  // while the dates are still on screen.
+  const dateError = (() => {
+    if (!pickupDatetime) return null;
+    if (dropoffDatetime && dropoffDatetime < pickupDatetime) return "Drop-off is before pickup";
+    if (returnDatetime && returnDatetime < pickupDatetime) return "Return is before pickup";
+    if (returnDatetime && dropoffDatetime && returnDatetime < dropoffDatetime) return "Return is before drop-off";
+    return null;
+  })();
 
-  const handleSave = async () => {
+  const canSave = customerName && rows.length > 0 && rows.every(rowValid) && !dateError;
+
+  const [clashError, setClashError] = useState<any[] | null>(null);
+
+  const handleSave = async (force = false) => {
     setSaving(true);
-    await fetch("/api/admin/bookings", {
+    setClashError(null);
+    const res = await fetch("/api/admin/bookings", {
       method: editing ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -662,8 +693,17 @@ function BookingForm({ booking, onClose, onSave }: { booking?: any; onClose: () 
         pickup_datetime: pickupDatetime || null, dropoff_datetime: dropoffDatetime || null,
         return_datetime: returnDatetime || null,
         travel_details: travelDetails || null, notes: notes || null,
+        force,
       }),
     });
+
+    if (res.status === 409) {
+      const data = await res.json();
+      setClashError(data.clashes || []);
+      setSaving(false);
+      return;
+    }
+
     setSaving(false);
     onSave();
   };
@@ -709,9 +749,36 @@ function BookingForm({ booking, onClose, onSave }: { booking?: any; onClose: () 
               )}
             </div>
 
+            {clashingRows.length > 0 && (
+              <div className="mb-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
+                <div className="font-medium mb-1">Already booked on these dates</div>
+                <ul className="text-xs text-amber-700 space-y-0.5">
+                  {clashingRows.map((r, i) => {
+                    const v = r.vehicle_id ? busy.vehicles[r.vehicle_id] : null;
+                    const d = r.driver_id ? busy.drivers[r.driver_id] : null;
+                    const hit = v || d;
+                    const who = [
+                      v ? fleet.find((f: any) => String(f.id) === String(r.vehicle_id)) : null,
+                      d ? drivers.find((f: any) => String(f.id) === String(r.driver_id)) : null,
+                    ];
+                    return (
+                      <li key={i}>
+                        {who[0] ? `${who[0].make} ${who[0].model}` : ""}
+                        {who[0] && who[1] ? " and " : ""}
+                        {who[1] ? who[1].full_name : ""}
+                        {hit ? ` — on ${hit.booking_ref}` : ""}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+
             <div className="space-y-3">
               {rows.map((r, i) => {
                 const borrowed = r.source === "borrowed";
+                const vehicleBusy = r.vehicle_id && busy.vehicles[r.vehicle_id];
+                const driverBusy = r.driver_id && busy.drivers[r.driver_id];
                 return (
                   <div key={i} className={`rounded-xl border p-4 space-y-3 ${borrowed ? "border-purple-200 bg-purple-50/40" : "border-ink/10 bg-paper-soft"}`}>
                     <div className="flex items-center justify-between gap-2">
@@ -744,6 +811,7 @@ function BookingForm({ booking, onClose, onSave }: { booking?: any; onClose: () 
                               .map((v: any) => (
                                 <option key={v.id} value={v.id}>
                                   {v.make} {v.model} ({v.seats}){v.plate_number ? ` · ${v.plate_number}` : ""}
+                                  {busy.vehicles[v.id] ? " — busy" : ""}
                                 </option>
                               ))}
                           </select>
@@ -752,7 +820,7 @@ function BookingForm({ booking, onClose, onSave }: { booking?: any; onClose: () 
                           <label className={lbl}>Driver</label>
                           <select value={r.driver_id} onChange={e => setRow(i, { driver_id: e.target.value })} className={sel}>
                             <option value="">— Select —</option>
-                            {drivers.map((d: any) => <option key={d.id} value={d.id}>{d.full_name}</option>)}
+                            {drivers.map((d: any) => <option key={d.id} value={d.id}>{d.full_name}{busy.drivers[d.id] ? " — busy" : ""}{d.status === "leave" ? " — on leave" : ""}</option>)}
                           </select>
                         </div>
                       </div>
@@ -774,7 +842,7 @@ function BookingForm({ booking, onClose, onSave }: { booking?: any; onClose: () 
                           <label className={lbl}>Driver</label>
                           <select value={r.driver_id} onChange={e => setRow(i, { driver_id: e.target.value })} className={sel}>
                             <option value="">— Select —</option>
-                            {drivers.map((d: any) => <option key={d.id} value={d.id}>{d.full_name}</option>)}
+                            {drivers.map((d: any) => <option key={d.id} value={d.id}>{d.full_name}{busy.drivers[d.id] ? " — busy" : ""}{d.status === "leave" ? " — on leave" : ""}</option>)}
                           </select>
                         </div>
                       </div>
@@ -833,6 +901,12 @@ function BookingForm({ booking, onClose, onSave }: { booking?: any; onClose: () 
               <div><label className={lbl}>Pickup Date &amp; Time</label><input type="datetime-local" value={pickupDatetime} onChange={e => setPickupDatetime(e.target.value)} className={inp} /></div>
               <div><label className={lbl}>Drop Date &amp; Time</label><input type="datetime-local" value={dropoffDatetime} onChange={e => setDropoffDatetime(e.target.value)} className={inp} /></div>
 
+              {dateError && (
+                <div className="sm:col-span-2 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2.5 rounded-xl">
+                  {dateError}
+                </div>
+              )}
+
               <div>
                 <label className={lbl}>
                   Return Date &amp; Time
@@ -865,9 +939,26 @@ function BookingForm({ booking, onClose, onSave }: { booking?: any; onClose: () 
           </div>
         </div>
 
+        {clashError && (
+          <div className="mx-6 mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+            <div className="text-sm font-medium text-red-700 mb-1">Double booking</div>
+            <ul className="text-xs text-red-600 space-y-0.5 mb-3">
+              {clashError.map((c, i) => (
+                <li key={i}>
+                  {[c.vehicle, c.driver].filter(Boolean).join(" and ")} is on {c.booking_ref}
+                </li>
+              ))}
+            </ul>
+            <button onClick={() => handleSave(true)} disabled={saving}
+              className="text-xs font-medium text-red-700 underline hover:no-underline">
+              Save anyway
+            </button>
+          </div>
+        )}
+
         <div className="px-6 py-4 border-t border-ink/10 flex gap-3 justify-end sticky bottom-0 bg-paper">
           <button onClick={onClose} className="px-5 py-2.5 text-sm text-muted border border-ink/15 rounded-xl">Cancel</button>
-          <button onClick={handleSave} disabled={saving || !canSave}
+          <button onClick={() => handleSave()} disabled={saving || !canSave}
             className="px-5 py-2.5 text-sm bg-gold text-ink rounded-xl font-medium hover:bg-gold/90 disabled:opacity-50">
             {saving ? "Saving..." : editing ? "Save Changes" : "Create Booking"}
           </button>

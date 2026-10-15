@@ -9,9 +9,64 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const vehicles = await sql`SELECT * FROM vehicles ORDER BY make, model`;
-    return NextResponse.json(vehicles);
+    // Whether a car is out today is a fact about the bookings, so it's worked
+    // out here rather than kept in step by hand on the fleet page. Only
+    // maintenance is ever set by a person.
+    const vehicles = await sql`
+      SELECT v.*,
+        (
+          SELECT b.pickup_datetime
+          FROM booking_vehicles bv
+          JOIN bookings b ON b.id = bv.booking_id
+          WHERE bv.vehicle_id = v.id
+            AND b.status = 'confirmed'
+            AND b.invoice_number IS NULL
+            AND b.pickup_datetime > NOW()
+          ORDER BY b.pickup_datetime ASC
+          LIMIT 1
+        ) AS next_booking,
+        (
+          SELECT b.booking_ref
+          FROM booking_vehicles bv
+          JOIN bookings b ON b.id = bv.booking_id
+          WHERE bv.vehicle_id = v.id
+            AND b.status = 'confirmed'
+            AND b.invoice_number IS NULL
+            AND b.pickup_datetime > NOW()
+          ORDER BY b.pickup_datetime ASC
+          LIMIT 1
+        ) AS next_booking_ref,
+        (
+          SELECT b.booking_ref
+          FROM booking_vehicles bv
+          JOIN bookings b ON b.id = bv.booking_id
+          WHERE bv.vehicle_id = v.id
+            AND b.status = 'confirmed'
+            AND b.invoice_number IS NULL
+            AND b.pickup_datetime IS NOT NULL
+            AND b.pickup_datetime <= NOW()
+            AND (
+              COALESCE(b.return_datetime, b.dropoff_datetime) IS NULL
+              OR COALESCE(b.return_datetime, b.dropoff_datetime) >= NOW()
+            )
+          ORDER BY b.pickup_datetime DESC
+          LIMIT 1
+        ) AS busy_on
+      FROM vehicles v
+      ORDER BY v.make, v.model
+    `;
+
+    const withStatus = vehicles.map((v: any) => ({
+      ...v,
+      status: v.status === "maintenance" ? "maintenance"
+        : v.busy_on ? "on_hire"
+        : v.next_booking ? "booked"
+        : "available",
+    }));
+
+    return NextResponse.json(withStatus);
   } catch (err) {
+    console.error(err);
     return NextResponse.json({ error: "Database error" }, { status: 500 });
   }
 }
@@ -35,7 +90,7 @@ export async function POST(req: NextRequest) {
         ${body.plate_number || null}, ${body.category},
         ${body.seats || null}, ${body.fuel_type || "Diesel"},
         ${body.transmission || "Automatic"}, ${body.color || null},
-        ${body.status || "available"},
+        ${body.status === "maintenance" ? "maintenance" : "available"},
         ${body.insurance_expiry || null},
         ${body.operating_licence_expiry || null},
         ${body.registration_expiry || null},
@@ -65,7 +120,7 @@ export async function PUT(req: NextRequest) {
         make = ${body.make}, model = ${body.model},
         year = ${body.year || null}, plate_number = ${body.plate_number || null},
         category = ${body.category}, seats = ${body.seats || null},
-        color = ${body.color || null}, status = ${body.status},
+        color = ${body.color || null}, status = ${body.status === "maintenance" ? "maintenance" : "available"},
         insurance_expiry = ${body.insurance_expiry || null},
         operating_licence_expiry = ${body.operating_licence_expiry || null},
         registration_expiry = ${body.registration_expiry || null},

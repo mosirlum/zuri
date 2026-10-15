@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { BarChart3, Lock, TrendingUp, TrendingDown, Car, Building2, CalendarCheck, Download, FileText, DollarSign, AlertTriangle, Clock, Minus } from "lucide-react";
+import { BarChart3, Lock, TrendingUp, TrendingDown, Car, Building2, CalendarCheck, Download, FileText, DollarSign, AlertTriangle, Clock, Minus, Calendar, Info, ArrowRight, Receipt } from "lucide-react";
 import { useSession } from "next-auth/react";
+import Link from "next/link";
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -89,6 +90,41 @@ function Delta({ current, previous, label, lowerIsBetter = false }: {
       <Icon className="w-3 h-3" />
       {pct > 0 ? "+" : ""}{pct}% <span className="text-muted font-normal">vs {label}</span>
     </div>
+  );
+}
+
+const compact = (n: number) => {
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}M`;
+  if (abs >= 1_000) return `${Math.round(n / 1_000)}K`;
+  return String(Math.round(n));
+};
+
+// Rounds an axis out to a clean 1 / 2 / 5 step so the labels read as money.
+function niceStep(rough: number) {
+  const pow = Math.pow(10, Math.floor(Math.log10(rough || 1)));
+  const norm = (rough || 1) / pow;
+  return (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10) * pow;
+}
+
+// A thumbnail of the same series shown in the big chart — enough to see the
+// direction without reading a number.
+function Spark({ values, color }: { values: number[]; color: string }) {
+  if (values.length < 2) return null;
+  const max = Math.max(...values, 0);
+  const min = Math.min(...values, 0);
+  const spanV = (max - min) || 1;
+  const W = 100, H = 28;
+  const d = values.map((v, i) => {
+    const x = (i / (values.length - 1)) * W;
+    const y = H - ((v - min) / spanV) * H;
+    return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full mt-3" style={{ height: "28px" }} preserveAspectRatio="none">
+      <path d={`${d} L${W},${H} L0,${H} Z`} fill={color} opacity="0.12" />
+      <path d={d} fill="none" stroke={color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+    </svg>
   );
 }
 
@@ -216,6 +252,89 @@ export default function ReportsPage() {
 
     return rows.sort((a: any, b: any) => b.net - a.net);
   };
+
+  // ── running series across the period ───────────────────────────
+  // Built from the bookings and expenses already loaded, so no extra calls.
+  // Totals accumulate, which is how a period actually builds up.
+  const series = (() => {
+    if (!data?.period) return [];
+    const start = new Date(data.period.startDate);
+    const end = new Date(data.period.endDate);
+    const days = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+    const byMonth = days > 62;
+
+    const buckets: { label: string; from: Date; to: Date }[] = [];
+    if (byMonth) {
+      const c = new Date(start.getFullYear(), start.getMonth(), 1);
+      while (c <= end) {
+        buckets.push({
+          label: c.toLocaleDateString("en-TZ", { month: "short" }),
+          from: new Date(c.getFullYear(), c.getMonth(), 1),
+          to: new Date(c.getFullYear(), c.getMonth() + 1, 0, 23, 59, 59),
+        });
+        c.setMonth(c.getMonth() + 1);
+      }
+    } else {
+      const c = new Date(start);
+      while (c <= end) {
+        buckets.push({
+          label: `${c.getDate()} ${c.toLocaleDateString("en-TZ", { month: "short" })}`,
+          from: new Date(c.getFullYear(), c.getMonth(), c.getDate()),
+          to: new Date(c.getFullYear(), c.getMonth(), c.getDate(), 23, 59, 59),
+        });
+        c.setDate(c.getDate() + 1);
+      }
+    }
+
+    let rev = 0, veh = 0, comp = 0;
+    return buckets.map(b => {
+      const inB = (d: string) => {
+        if (!d) return false;
+        const t = new Date(d).getTime();
+        return t >= b.from.getTime() && t <= b.to.getTime();
+      };
+      rev += bookings.filter((x: any) => isInvoiced(x) && inB(x.pickup_datetime))
+        .reduce((s: number, x: any) => s + (parseFloat(x.paid_amount) || 0), 0);
+      veh += expenses.filter((e: any) => isVehicleCost(e) && inB(e.expense_date))
+        .reduce((s: number, e: any) => s + (parseFloat(e.amount) || 0), 0);
+      comp += expenses.filter((e: any) => !isVehicleCost(e) && inB(e.expense_date))
+        .reduce((s: number, e: any) => s + (parseFloat(e.amount) || 0), 0);
+      return { label: b.label, revenue: rev, vehicle: veh, company: comp, net: rev - veh - comp };
+    });
+  })();
+
+  const hasSeries = series.some(p => p.revenue || p.vehicle || p.company);
+  const SW = 320, SH = 130;
+  const sVals = series.flatMap(p => [p.revenue, p.vehicle, p.company, p.net]);
+  const sStep = niceStep((Math.max(...sVals, 0) - Math.min(...sVals, 0) || 1) / 4);
+  const sMax = Math.ceil((Math.max(...sVals, 0) || 1) / sStep) * sStep;
+  const sMin = Math.floor(Math.min(...sVals, 0) / sStep) * sStep;
+  const sTicks: number[] = [];
+  for (let v = sMax; v >= sMin - 0.0001; v -= sStep) sTicks.push(Math.round(v));
+  const sy = (v: number) => SH - ((v - sMin) / ((sMax - sMin) || 1)) * SH;
+  const sx = (i: number) => series.length <= 1 ? 0 : (i / (series.length - 1)) * SW;
+  const sLine = (k: "revenue" | "vehicle" | "company" | "net") =>
+    series.map((p, i) => `${i === 0 ? "M" : "L"}${sx(i).toFixed(1)},${sy(p[k]).toFixed(1)}`).join(" ");
+  const sLabelEvery = Math.max(1, Math.ceil(series.length / 6));
+
+  // ── expenses by category ───────────────────────────────────────
+  const catTotals: Record<string, number> = {};
+  expenses.forEach((e: any) => {
+    const key = e.category || "other";
+    catTotals[key] = (catTotals[key] || 0) + parseFloat(e.amount || 0);
+  });
+  const totalExpenses = vehicleCosts + companyCosts;
+  const CAT_COLORS = ["#b8843a", "#1c1814", "#c2410c", "#0f766e", "#7e22ce", "#a16207", "#9f1239", "#166534"];
+  let catOffset = 0;
+  const cats = Object.entries(catTotals)
+    .map(([key, amount]) => ({ key, amount, label: EXPENSE_CATEGORIES[key] || key.replace(/_/g, " ") }))
+    .sort((a, b) => b.amount - a.amount)
+    .map((c, i) => {
+      const pct = totalExpenses > 0 ? (c.amount / totalExpenses) * 100 : 0;
+      const row = { ...c, pct, offset: catOffset, color: CAT_COLORS[i % CAT_COLORS.length] };
+      catOffset += pct;
+      return row;
+    });
 
   const vehiclePerf = data ? buildVehiclePerformance() : [];
   const idleVehicles = vehiclePerf.filter((v: any) => !v.borrowed && v.trips === 0);
@@ -496,20 +615,25 @@ export default function ReportsPage() {
           <h1 className="font-display text-3xl font-medium text-ink">
             Business <em className="italic text-gold">Reports</em>
           </h1>
-          <p className="text-muted text-sm mt-1">{getPeriodLabel()}</p>
+          <p className="text-muted text-sm mt-1">Comprehensive insight into your fleet performance.</p>
         </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="flex items-center gap-2 border border-ink/15 rounded-xl px-4 py-2.5 text-sm text-ink">
+            <Calendar className="w-4 h-4 text-muted" />
+            {getPeriodLabel()}
+          </span>
         <button onClick={generatePDF} disabled={generating || !data}
           className="flex items-center gap-2 bg-gold text-ink px-5 py-2.5 text-sm font-semibold hover:bg-gold/90 transition-colors rounded-xl disabled:opacity-50">
           <Download className="w-4 h-4" />
-          {generating ? "Generating PDF..." : "Export PDF"}
+          {generating ? "Generating..." : "Export"}
         </button>
+        </div>
       </div>
 
       {/* Filter */}
       <div className="bg-paper rounded-2xl border border-ink/10 p-4">
         <div className="flex items-center gap-2 flex-wrap mb-4">
-          <FileText className="w-4 h-4 text-muted" />
-          <span className="text-xs tracking-widest uppercase text-muted font-medium">Report period:</span>
+          <span className="text-xs tracking-widest uppercase text-muted font-medium mr-2">Report Period</span>
           {(["week","month","year","all"] as FilterMode[]).map(m => (
             <button key={m} onClick={() => setFilterMode(m)}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
@@ -561,36 +685,167 @@ export default function ReportsPage() {
       ) : !summary ? null : (
         <>
           {/* Summary cards */}
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-            <div className="bg-green-50 border border-green-200 rounded-2xl p-5">
-              <TrendingUp className="w-6 h-6 text-green-600 mb-2" />
-              <div className="font-display text-2xl font-medium text-green-700">{revenue.toLocaleString()}</div>
-              <div className="text-xs text-green-600 mt-1">Revenue · TZS</div>
-              {prevM && prev && <Delta current={revenue} previous={prevM.revenue} label={prev.label} />}
-            </div>
-            <div className="bg-red-50 border border-red-200 rounded-2xl p-5">
-              <Car className="w-6 h-6 text-red-500 mb-2" />
-              <div className="font-display text-2xl font-medium text-red-600">{vehicleCosts.toLocaleString()}</div>
-              <div className="text-xs text-red-500 mt-1">Vehicle costs · TZS</div>
-              {prevM && prev && <Delta current={vehicleCosts} previous={prevM.vehicleCosts} label={prev.label} lowerIsBetter />}
-            </div>
-            <div className="bg-orange-50 border border-orange-200 rounded-2xl p-5">
-              <Building2 className="w-6 h-6 text-orange-500 mb-2" />
-              <div className="font-display text-2xl font-medium text-orange-600">{companyCosts.toLocaleString()}</div>
-              <div className="text-xs text-orange-500 mt-1">Company costs · TZS</div>
-              {prevM && prev && <Delta current={companyCosts} previous={prevM.companyCosts} label={prev.label} lowerIsBetter />}
-            </div>
-            <div className={`border rounded-2xl p-5 ${netProfit >= 0 ? "bg-gold/10 border-gold/30" : "bg-red-100 border-red-300"}`}>
-              <DollarSign className={`w-6 h-6 mb-2 ${netProfit >= 0 ? "text-gold" : "text-red-600"}`} />
-              <div className={`font-display text-2xl font-medium ${netProfit >= 0 ? "text-gold" : "text-red-700"}`}>
-                {Math.abs(netProfit).toLocaleString()}
-              </div>
-              <div className={`text-xs mt-1 ${netProfit >= 0 ? "text-gold" : "text-red-600"}`}>
-                {netProfit >= 0 ? "Net Profit" : "Net Loss"} · TZS
-              </div>
-              {prevM && prev && <Delta current={netProfit} previous={prevM.net} label={prev.label} />}
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <ReportCard icon={TrendingUp} tone="green" label="Total Revenue"
+              value={`${revenue.toLocaleString()} TZS`} sub={`From ${invoicedTrips.length} invoiced trips`}
+              delta={prevM && prev ? <Delta current={revenue} previous={prevM.revenue} label={prev.label} /> : null}
+              spark={hasSeries ? series.map(p => p.revenue) : null} sparkColor="#16a34a" />
+
+            <ReportCard icon={Car} tone="red" label="Total Vehicle Costs"
+              value={`${vehicleCosts.toLocaleString()} TZS`} sub={`Across ${expenses.filter(isVehicleCost).length} cost records`}
+              delta={prevM && prev ? <Delta current={vehicleCosts} previous={prevM.vehicleCosts} label={prev.label} lowerIsBetter /> : null}
+              spark={hasSeries ? series.map(p => p.vehicle) : null} sparkColor="#ef4444" />
+
+            <ReportCard icon={Building2} tone="orange" label="Company Costs"
+              value={`${companyCosts.toLocaleString()} TZS`}
+              sub={companyCosts === 0 ? "No company costs" : `Across ${expenses.filter((e: any) => !isVehicleCost(e)).length} records`}
+              delta={prevM && prev ? <Delta current={companyCosts} previous={prevM.companyCosts} label={prev.label} lowerIsBetter /> : null}
+              spark={hasSeries ? series.map(p => p.company) : null} sparkColor="#f97316" />
+
+            <ReportCard icon={DollarSign} tone={netProfit >= 0 ? "gold" : "red"}
+              label={netProfit >= 0 ? "Net Profit" : "Net Loss"}
+              value={`${netProfit < 0 ? "-" : ""}${Math.abs(netProfit).toLocaleString()} TZS`}
+              sub={revenue > 0 ? `Profit margin ${Math.round((netProfit / revenue) * 100)}%` : "No revenue yet"}
+              delta={prevM && prev ? <Delta current={netProfit} previous={prevM.net} label={prev.label} /> : null}
+              spark={hasSeries ? series.map(p => p.net) : null} sparkColor="#b8843a" />
           </div>
+
+          {/* Trend + categories */}
+          {hasSeries && (
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+              <div className="bg-paper rounded-2xl border border-ink/10 overflow-hidden lg:col-span-2">
+                <div className="px-6 py-4 border-b border-ink/10 flex items-center justify-between flex-wrap gap-3">
+                  <h2 className="font-display text-xl font-medium">Profit &amp; Loss Trend</h2>
+                  <div className="flex items-center gap-3 text-xs flex-wrap">
+                    <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-600" />Revenue</span>
+                    <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500" />Vehicle</span>
+                    <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-orange-500" />Company</span>
+                    <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-gold" />Net</span>
+                  </div>
+                </div>
+
+                <div className="px-6 pt-5 pb-4">
+                  <div className="flex gap-3">
+                    <div className="flex flex-col justify-between text-[0.65rem] text-muted text-right w-12 flex-shrink-0" style={{ height: "190px" }}>
+                      {sTicks.map((v, i) => (
+                        <span key={i} className={v === 0 ? "text-ink/60 font-medium" : ""}>{compact(v)}</span>
+                      ))}
+                    </div>
+
+                    <svg viewBox={`0 0 ${SW} ${SH}`} className="w-full" style={{ height: "190px" }} preserveAspectRatio="none">
+                      <defs>
+                        <linearGradient id="repRev" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#16a34a" stopOpacity="0.25" />
+                          <stop offset="100%" stopColor="#16a34a" stopOpacity="0.02" />
+                        </linearGradient>
+                      </defs>
+
+                      {sTicks.map((v, i) => (
+                        <line key={i} x1="0" y1={sy(v)} x2={SW} y2={sy(v)}
+                          stroke="currentColor"
+                          className={v === 0 ? "text-ink/25" : "text-ink/[0.07]"}
+                          strokeWidth="1" vectorEffect="non-scaling-stroke" />
+                      ))}
+
+                      <path d={`${sLine("revenue")} L${SW},${sy(0)} L0,${sy(0)} Z`} fill="url(#repRev)" />
+
+                      <path d={sLine("vehicle")} fill="none" stroke="#ef4444" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+                      <path d={sLine("company")} fill="none" stroke="#f97316" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+                      <path d={sLine("net")} fill="none" stroke="#b8843a" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+                      <path d={sLine("revenue")} fill="none" stroke="#16a34a" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+
+                      {series.map((p, i) => (
+                        <g key={i}>
+                          <circle cx={sx(i)} cy={sy(p.vehicle)} r="2.5" fill="#ef4444" vectorEffect="non-scaling-stroke" />
+                          <circle cx={sx(i)} cy={sy(p.company)} r="2.5" fill="#f97316" vectorEffect="non-scaling-stroke" />
+                          <circle cx={sx(i)} cy={sy(p.net)} r="2.5" fill="#b8843a" vectorEffect="non-scaling-stroke" />
+                          <circle cx={sx(i)} cy={sy(p.revenue)} r="2.5" fill="#16a34a" vectorEffect="non-scaling-stroke" />
+                        </g>
+                      ))}
+                    </svg>
+                  </div>
+
+                  <div className="relative mt-2 ml-[3.75rem] h-4">
+                    {series.map((p, i) => (
+                      i % sLabelEvery === 0 || i === series.length - 1 ? (
+                        <span key={i}
+                          className="absolute text-[0.65rem] text-muted -translate-x-1/2 whitespace-nowrap"
+                          style={{ left: `${series.length <= 1 ? 0 : (i / (series.length - 1)) * 100}%` }}>
+                          {p.label}
+                        </span>
+                      ) : null
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-paper rounded-2xl border border-ink/10 overflow-hidden">
+                <div className="px-6 py-4 border-b border-ink/10">
+                  <h2 className="font-display text-xl font-medium">Expenses by Category</h2>
+                </div>
+                <div className="p-6">
+                  {totalExpenses === 0 ? (
+                    <p className="text-sm text-muted text-center py-8">No expenses in this period.</p>
+                  ) : (
+                    <>
+                      <div className="relative w-32 h-32 mx-auto mb-5 flex-shrink-0">
+                        <svg viewBox="0 0 42 42" className="-rotate-90 w-full h-full">
+                          <circle cx="21" cy="21" r="15.9155" fill="none" stroke="currentColor" className="text-ink/5" strokeWidth="4" />
+                          {cats.map(c => (
+                            <circle key={c.key} cx="21" cy="21" r="15.9155" fill="none"
+                              stroke={c.color} strokeWidth="4"
+                              strokeDasharray={`${c.pct} ${100 - c.pct}`}
+                              strokeDashoffset={-c.offset} />
+                          ))}
+                        </svg>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                          <span className="font-display text-base font-medium text-ink leading-none">{compact(totalExpenses)}</span>
+                          <span className="text-[0.55rem] text-muted uppercase tracking-widest mt-1">TZS Total</span>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        {cats.slice(0, 6).map(c => (
+                          <div key={c.key} className="flex items-center gap-2 text-xs">
+                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: c.color }} />
+                            <span className="text-ink-soft flex-1 truncate">{c.label}</span>
+                            <span className="text-ink font-medium whitespace-nowrap">{Math.round(c.amount).toLocaleString()}</span>
+                            <span className="text-muted w-9 text-right">{Math.round(c.pct)}%</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+                <div className="px-6 py-3 border-t border-ink/5 text-xs text-muted">
+                  {expenses.length} expense{expenses.length === 1 ? "" : "s"} recorded
+                </div>
+              </div>
+
+              <div className="bg-paper rounded-2xl border border-ink/10 overflow-hidden">
+              <div className="px-6 py-4 border-b border-ink/10">
+                <h2 className="font-display text-xl font-medium">Top Expenses</h2>
+              </div>
+              <div className="divide-y divide-ink/5">
+                {cats.slice(0, 5).map(c => (
+                  <div key={c.key} className="px-6 py-3 flex items-center gap-4">
+                    <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg flex-shrink-0"
+                      style={{ background: `${c.color}1a`, color: c.color }}>
+                      <Receipt className="w-4 h-4" />
+                    </span>
+                    <span className="flex-1 min-w-0 text-sm font-medium text-ink truncate">{c.label}</span>
+                    <span className="text-sm text-ink whitespace-nowrap">{Math.round(c.amount).toLocaleString()} TZS</span>
+                    <span className="text-xs text-muted w-12 text-right">{Math.round(c.pct)}%</span>
+                  </div>
+                ))}
+              </div>
+                <div className="px-6 py-3 border-t border-ink/5">
+                  <Link href="/admin/finance" className="text-xs text-gold hover:underline flex items-center gap-1">
+                    View all expenses <ArrowRight className="w-3 h-3" />
+                  </Link>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Two-layer P&L */}
           <div className="bg-paper rounded-2xl border border-ink/10 overflow-hidden">
@@ -720,15 +975,21 @@ export default function ReportsPage() {
             </div>
           </div>
 
-          {/* Per-vehicle performance */}
+          {/* Per-vehicle performance + trips */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
           <div className="bg-paper rounded-2xl border border-ink/10 overflow-hidden">
             <div className="px-6 py-4 border-b border-ink/10 flex items-center justify-between flex-wrap gap-2">
               <div>
-                <h2 className="font-display text-xl font-medium">Vehicle Performance</h2>
+                <h2 className="font-display text-xl font-medium flex items-center gap-2">
+                  Vehicle Performance
+                  <span title="Revenue is shared equally between the cars used on the same job">
+                    <Info className="w-3.5 h-3.5 text-muted" />
+                  </span>
+                </h2>
               </div>
               {bestVehicle && (
                 <span className="text-xs bg-gold/10 text-gold border border-gold/30 px-3 py-1.5 rounded-full font-medium">
-                  Best: {bestVehicle.name} · {bestVehicle.trips} trips
+                  Best Performer: {bestVehicle.name}
                 </span>
               )}
             </div>
@@ -747,7 +1008,7 @@ export default function ReportsPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-ink/10 bg-paper-soft">
-                    {["Vehicle","Trips","Share","Revenue","Trip Costs","Net"].map(h => (
+                    {["Vehicle","Trips","Utilisation","Revenue","Trip Costs","Net"].map(h => (
                       <th key={h} className="px-4 py-3 text-left text-xs tracking-widest uppercase text-muted whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -770,10 +1031,12 @@ export default function ReportsPage() {
                         <td className="px-4 py-3 text-sm text-ink font-medium">{v.trips}</td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
-                            <div className="w-16 h-1.5 bg-ink/5 rounded-full overflow-hidden">
-                              <div className={`h-full rounded-full ${v.borrowed ? "bg-purple-400" : "bg-gold"}`} style={{ width: `${v.share}%` }} />
+                            <div className="w-20 h-2 bg-ink/5 rounded-full overflow-hidden">
+                              <div className={`h-full rounded-full ${
+                                v.trips === 0 ? "bg-ink/10" : v.borrowed ? "bg-purple-400" : "bg-gold"
+                              }`} style={{ width: `${Math.max(v.share, v.trips > 0 ? 4 : 0)}%` }} />
                             </div>
-                            <span className="text-xs text-muted">{Math.round(v.share)}%</span>
+                            <span className={`text-xs ${v.trips === 0 ? "text-muted" : "text-ink"}`}>{Math.round(v.share)}%</span>
                           </div>
                         </td>
                         <td className="px-4 py-3 text-sm whitespace-nowrap">
@@ -795,37 +1058,33 @@ export default function ReportsPage() {
             </div>
           </div>
 
-          {/* Service breakdown */}
-          <div className="bg-paper rounded-2xl border border-ink/10 overflow-hidden">
-            <div className="px-6 py-4 border-b border-ink/10">
-              <h2 className="font-display text-xl font-medium">Revenue by Service</h2>
-            </div>
-            <div className="p-6 space-y-3">
-              {Object.entries(serviceCount).sort(([,a],[,b]) => b.revenue - a.revenue).map(([svc, d]) => {
-                const pct = revenue > 0 ? (d.revenue / revenue) * 100 : 0;
-                return (
-                  <div key={svc}>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span className="text-ink">{svc}</span>
-                      <span className="text-muted">{d.count} trips · {d.revenue.toLocaleString()} TZS ({Math.round(pct)}%)</span>
-                    </div>
-                    <div className="h-2 bg-gold/10 rounded-full overflow-hidden">
-                      <div className="h-full bg-gold rounded-full" style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
-              {Object.keys(serviceCount).length === 0 && (
-                <p className="text-muted text-sm text-center py-4">No bookings in this period.</p>
-              )}
-            </div>
-          </div>
-
-          {/* Trips in period */}
-          <div className="bg-paper rounded-2xl border border-ink/10 overflow-hidden">
+<div className="bg-paper rounded-2xl border border-ink/10 overflow-hidden">
             <div className="px-6 py-4 border-b border-ink/10 flex items-center justify-between">
               <h2 className="font-display text-xl font-medium">Trips in Period</h2>
               <span className="text-xs text-muted">{bookings.length} bookings</span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-ink/5 border-b border-ink/10">
+              <div className="px-6 py-4">
+                <div className="font-display text-2xl font-medium text-ink">{bookings.length}</div>
+                <div className="text-xs text-muted mt-0.5">Total Trips</div>
+              </div>
+              <div className="px-6 py-4">
+                <div className="font-display text-2xl font-medium text-green-600">
+                  {bookings.filter((b: any) => b.status === "completed").length}
+                </div>
+                <div className="text-xs text-muted mt-0.5">Completed</div>
+              </div>
+              <div className="px-6 py-4">
+                <div className="font-display text-2xl font-medium text-red-500">
+                  {bookings.filter((b: any) => b.status === "cancelled").length}
+                </div>
+                <div className="text-xs text-muted mt-0.5">Cancelled</div>
+              </div>
+              <div className="px-6 py-4">
+                <div className="font-display text-2xl font-medium text-gold">{revenue.toLocaleString()}</div>
+                <div className="text-xs text-muted mt-0.5">Total Revenue · TZS</div>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -877,8 +1136,74 @@ export default function ReportsPage() {
               </table>
             </div>
           </div>
+          </div>
+
+          {/* Service breakdown */}
+          <div className="bg-paper rounded-2xl border border-ink/10 overflow-hidden">
+            <div className="px-6 py-4 border-b border-ink/10">
+              <h2 className="font-display text-xl font-medium">Revenue by Service</h2>
+            </div>
+            <div className="p-6 space-y-3">
+              {Object.entries(serviceCount).sort(([,a],[,b]) => b.revenue - a.revenue).map(([svc, d]) => {
+                const pct = revenue > 0 ? (d.revenue / revenue) * 100 : 0;
+                return (
+                  <div key={svc}>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-ink">{svc}</span>
+                      <span className="text-muted">{d.count} trips · {d.revenue.toLocaleString()} TZS ({Math.round(pct)}%)</span>
+                    </div>
+                    <div className="h-2 bg-gold/10 rounded-full overflow-hidden">
+                      <div className="h-full bg-gold rounded-full" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+              {Object.keys(serviceCount).length === 0 && (
+                <p className="text-muted text-sm text-center py-4">No bookings in this period.</p>
+              )}
+            </div>
+          </div>
+
+          {/* Trips in period */}
+
         </>
       )}
+    </div>
+  );
+}
+
+// White card carrying its own trend line, so the four headline numbers can be
+// compared without switching to the chart below.
+function ReportCard({ icon: Icon, tone, label, value, sub, delta, spark, sparkColor }: {
+  icon: any; tone: string; label: string; value: string; sub: string;
+  delta?: React.ReactNode; spark?: number[] | null; sparkColor: string;
+}) {
+  const tones: Record<string, string> = {
+    green: "bg-green-50 text-green-600 border-green-200",
+    red: "bg-red-50 text-red-500 border-red-200",
+    orange: "bg-orange-50 text-orange-500 border-orange-200",
+    gold: "bg-gold/10 text-gold border-gold/20",
+  };
+  const figure: Record<string, string> = {
+    green: "text-green-700",
+    red: "text-red-600",
+    orange: "text-orange-600",
+    gold: "text-gold",
+  };
+  return (
+    <div className="bg-paper rounded-2xl border border-ink/10 p-5">
+      <div className="flex items-start gap-3">
+        <span className={`inline-flex items-center justify-center w-10 h-10 rounded-xl border flex-shrink-0 ${tones[tone]}`}>
+          <Icon className="w-5 h-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm text-muted">{label}</div>
+          <div className={`font-display text-2xl font-medium leading-tight mt-1 ${figure[tone]}`}>{value}</div>
+        </div>
+      </div>
+      {delta}
+      <div className="text-xs text-muted mt-1.5">{sub}</div>
+      {spark && spark.length > 1 && <Spark values={spark} color={sparkColor} />}
     </div>
   );
 }

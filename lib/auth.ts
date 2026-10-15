@@ -7,6 +7,9 @@ const sql = neon(process.env.DATABASE_URL!);
 
 const useSecureCookies = process.env.NODE_ENV === "production";
 
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_MINUTES = 15;
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
     Credentials({
@@ -20,7 +23,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         try {
           const rows = await sql`
-            SELECT id, email, password, full_name, role, is_active
+            SELECT id, email, password, full_name, role, is_active,
+                   failed_attempts, locked_until
             FROM users
             WHERE email = ${credentials.email as string}
             LIMIT 1
@@ -28,15 +32,46 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
           const user = rows[0];
 
+          // Same "no such user" response whether the account doesn't exist,
+          // is deactivated, or is locked — nothing here should tell an
+          // attacker which of the three they've hit.
           if (!user) return null;
           if (!user.is_active) return null;
+
+          if (user.locked_until && new Date(user.locked_until) > new Date()) {
+            return null;
+          }
 
           const passwordMatch = await bcrypt.compare(
             credentials.password as string,
             user.password as string
           );
 
-          if (!passwordMatch) return null;
+          if (!passwordMatch) {
+            const attempts = (user.failed_attempts || 0) + 1;
+            const lockNow = attempts >= MAX_ATTEMPTS;
+            // Computed here rather than with SQL's NOW() + interval, since the
+            // tagged-template client doesn't support nesting one sql`` call
+            // inside another.
+            const lockUntil = lockNow ? new Date(Date.now() + LOCKOUT_MINUTES * 60 * 1000) : null;
+
+            await sql`
+              UPDATE users SET
+                failed_attempts = ${lockNow ? 0 : attempts},
+                locked_until = ${lockUntil}
+              WHERE id = ${user.id}
+            `;
+
+            return null;
+          }
+
+          // A correct password clears any count that had been building up.
+          if (user.failed_attempts > 0 || user.locked_until) {
+            await sql`
+              UPDATE users SET failed_attempts = 0, locked_until = NULL
+              WHERE id = ${user.id}
+            `;
+          }
 
           return {
             id: user.id.toString(),

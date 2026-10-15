@@ -1,22 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { neon } from "@neondatabase/serverless";
+import { requireSession, requireBoss, isGuardFailure } from "@/lib/guards";
+import { toId } from "@/lib/validate";
+import { logError } from "@/lib/error-log";
 
 const sql = neon(process.env.DATABASE_URL!);
 
-export async function PUT(req: NextRequest) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+// Only human decisions are stored. Anything else (on hire, overdue...) is derived.
+const ALLOWED = ["confirmed", "completed", "cancelled"];
 
+export async function PUT(req: NextRequest) {
   try {
-    const { id, status } = await req.json();
+    const body = await req.json();
+    const id = toId(body?.id);
+    const status = String(body?.status || "");
+    if (!id || !ALLOWED.includes(status)) {
+      return NextResponse.json({ error: "Invalid booking or status" }, { status: 400 });
+    }
+
+    // Staff may cancel; reopening or completing by hand is Ray's call.
+    const guard = status === "cancelled" ? await requireSession() : await requireBoss();
+    if (isGuardFailure(guard)) return guard.response;
+
     const result = await sql`
       UPDATE bookings SET status = ${status}, updated_at = NOW()
       WHERE id = ${id} RETURNING *
     `;
+    if (result.length === 0) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
     return NextResponse.json(result[0]);
   } catch (err) {
-    console.error(err);
-    return NextResponse.json({ error: "Database error" }, { status: 500 });
+    await logError("bookings/status", err);
+    return NextResponse.json({ error: "Could not update status" }, { status: 500 });
   }
 }

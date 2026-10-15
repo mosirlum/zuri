@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { neon } from "@neondatabase/serverless";
 
@@ -18,7 +18,7 @@ export async function PUT(req: NextRequest) {
       UPDATE bookings SET
         status = 'completed',
         payment_status = 'paid',
-        payment_method = ${body.payment_method || 'cash'},
+        payment_method = ${['cash','bank_transfer','mpesa','card','cheque','other'].includes(body.payment_method) ? body.payment_method : 'cash'},
         payment_received_date = ${body.payment_received_date},
         updated_at = NOW()
       WHERE id = ${body.id} AND status = 'confirmed' AND invoice_number IS NOT NULL

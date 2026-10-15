@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, memo } from "react";
-import { Plus, Car, AlertTriangle, CheckCircle, Edit, Trash2 } from "lucide-react";
+import { Plus, Car, AlertTriangle, CheckCircle, Edit, Trash2, Info } from "lucide-react";
 
 interface Vehicle {
   id: number;
@@ -27,7 +27,15 @@ interface Vehicle {
 const statusColors: Record<string, string> = {
   available: "bg-green-100 text-green-700",
   on_hire: "bg-blue-100 text-blue-700",
-  maintenance: "bg-amber-100 text-amber-700",
+  booked: "bg-amber-100 text-amber-700",
+  maintenance: "bg-orange-100 text-orange-700",
+};
+
+const statusLabels: Record<string, string> = {
+  available: "Available",
+  on_hire: "On Hire",
+  booked: "Booked",
+  maintenance: "Maintenance",
 };
 
 function DocRow({ label, days, date }: { label: string; days: number | null; date: string }) {
@@ -115,9 +123,20 @@ const VehicleCard = memo(({ vehicle, getDaysUntil, onEdit, onDelete }: {
             <div className="text-xs text-muted uppercase tracking-widest">Plate</div>
             <div className="font-mono font-semibold text-ink text-sm mt-0.5">{vehicle.plate_number || "— TBD —"}</div>
           </div>
-          <span className={`text-xs px-3 py-1.5 rounded-full font-medium capitalize ${statusColors[vehicle.status] || "bg-gray-100 text-gray-600"}`}>
-            {vehicle.status?.replace("_", " ")}
-          </span>
+          <div className="text-right">
+            <span className={`text-xs px-3 py-1.5 rounded-full font-medium ${statusColors[vehicle.status] || "bg-gray-100 text-gray-600"}`}>
+              {statusLabels[vehicle.status] || vehicle.status}
+            </span>
+            {(vehicle as any).busy_on && (
+              <div className="text-[0.65rem] text-muted mt-1 font-mono">{(vehicle as any).busy_on}</div>
+            )}
+            {!(vehicle as any).busy_on && (vehicle as any).next_booking && (
+              <div className="text-[0.65rem] text-muted mt-1">
+                {new Date((vehicle as any).next_booking).toLocaleDateString("en-TZ", { day: "numeric", month: "short" })}
+                {(vehicle as any).next_booking_ref ? ` · ${(vehicle as any).next_booking_ref}` : ""}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-2 text-xs border-t border-ink/5 pt-3">
@@ -316,7 +335,7 @@ function VehicleForm({ vehicle, onClose, onSave }: {
           <F label="Category" value={category} onChange={setCategory} options={["VIP / Safari", "Executive", "Group / Events", "Mid-Group", "Safari / Family"]} />
           <F label="Seats" value={seats} onChange={setSeats} type="number" />
           <F label="Color" value={color} onChange={setColor} />
-          <F label="Status" value={status} onChange={setStatus} options={["available", "on_hire", "maintenance"]} />
+          <F label="Status" value={status} onChange={setStatus} options={["available", "maintenance"]} />
 
           <div className="sm:col-span-2"><p className="text-xs tracking-widest uppercase text-gold font-medium mt-2">Documents</p></div>
           <F label="Insurance Expiry" value={insuranceExpiry} onChange={setInsuranceExpiry} type="date" />
@@ -368,7 +387,7 @@ export default function FleetPage() {
   const fetchVehicles = useCallback(async () => {
     const res = await fetch("/api/admin/vehicles");
     const data = await res.json();
-    setVehicles(data);
+    setVehicles(Array.isArray(data) ? data : []);
     setLoading(false);
   }, []);
 
@@ -402,15 +421,21 @@ export default function FleetPage() {
         </button>
       </div>
 
+      <div className="flex items-center justify-between gap-3 flex-wrap">
       <div className="flex gap-2 flex-wrap">
-        {["all", "available", "on_hire", "maintenance"].map(f => (
+        {["all", "available", "on_hire", "booked", "maintenance"].map(f => (
           <button key={f} onClick={() => setFilter(f)}
             className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
               filter === f ? "bg-ink text-paper" : "bg-paper text-muted border border-ink/10 hover:border-ink/30"
             }`}>
-            {f === "all" ? "All Vehicles" : f.replace("_", " ").replace(/\b\w/g, l => l.toUpperCase())}
+            {f === "all" ? "All Vehicles" : statusLabels[f]}
           </button>
         ))}
+      </div>
+        <span className="flex items-center gap-1.5 text-xs text-muted">
+          <Info className="w-3.5 h-3.5" />
+          On Hire and Booked come from the bookings
+        </span>
       </div>
 
       {loading ? (

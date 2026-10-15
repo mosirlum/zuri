@@ -57,6 +57,71 @@ export async function GET() {
   }
 }
 
+// A car or a driver can only be in one place at a time. This looks for any
+// other live booking whose dates overlap the one being saved.
+// A trip can't end before it starts. Catching it here keeps the reports and
+// the busy-window logic from having to cope with impossible dates.
+function checkDates(body: any) {
+  const pickup = body.pickup_datetime ? new Date(body.pickup_datetime) : null;
+  if (!pickup) return null;
+
+  const dropoff = body.dropoff_datetime ? new Date(body.dropoff_datetime) : null;
+  if (dropoff && dropoff < pickup) return "Drop-off cannot be before pickup";
+
+  const ret = body.return_datetime ? new Date(body.return_datetime) : null;
+  if (ret && ret < pickup) return "Return cannot be before pickup";
+  if (ret && dropoff && ret < dropoff) return "Return cannot be before drop-off";
+
+  return null;
+}
+
+async function findClashes(
+  vehicles: any[],
+  pickup: string | null,
+  ends: string | null,
+  excludeBookingId?: number,
+) {
+  if (!pickup) return [];
+
+  const start = pickup;
+  const end = ends || pickup;
+  const vehicleIds = vehicles.map(v => v.vehicle_id).filter(Boolean);
+  const driverIds = vehicles.map(v => v.driver_id).filter(Boolean);
+  if (vehicleIds.length === 0 && driverIds.length === 0) return [];
+
+  const rows = await sql`
+    SELECT
+      bv.vehicle_id, bv.driver_id,
+      b.booking_ref, b.pickup_datetime,
+      COALESCE(b.return_datetime, b.dropoff_datetime, b.pickup_datetime + interval '1 day') as ends_at,
+      v.make, v.model, v.plate_number,
+      d.full_name as driver_name
+    FROM booking_vehicles bv
+    JOIN bookings b ON b.id = bv.booking_id
+    LEFT JOIN vehicles v ON v.id = bv.vehicle_id
+    LEFT JOIN drivers d ON d.id = bv.driver_id
+    WHERE b.status <> 'cancelled'
+      AND b.id <> ${excludeBookingId || -1}
+      AND b.pickup_datetime IS NOT NULL
+      AND b.pickup_datetime <= ${end}::timestamptz
+      AND COALESCE(b.return_datetime, b.dropoff_datetime, b.pickup_datetime + interval '1 day') >= ${start}::timestamptz
+      AND (
+        (bv.vehicle_id IS NOT NULL AND bv.vehicle_id = ANY(${vehicleIds}::int[]))
+        OR (bv.driver_id IS NOT NULL AND bv.driver_id = ANY(${driverIds}::int[]))
+      )
+  `;
+
+  return rows.map((r: any) => ({
+    booking_ref: r.booking_ref,
+    vehicle: r.vehicle_id && vehicleIds.includes(r.vehicle_id)
+      ? [r.make, r.model].filter(Boolean).join(" ") + (r.plate_number ? ` (${r.plate_number})` : "")
+      : null,
+    driver: r.driver_id && driverIds.includes(r.driver_id) ? r.driver_name : null,
+    from: r.pickup_datetime,
+    to: r.ends_at,
+  }));
+}
+
 async function findOrCreateCustomer(name: string, phone?: string, email?: string) {
   if (!name) return null;
   const existing = await sql`
@@ -78,6 +143,19 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
+
+    const dateError = checkDates(body);
+    if (dateError) return NextResponse.json({ error: dateError }, { status: 400 });
+
+    const clashes = await findClashes(
+      Array.isArray(body.vehicles) ? body.vehicles : [],
+      body.pickup_datetime,
+      body.return_datetime || body.dropoff_datetime,
+    );
+    if (clashes.length > 0 && !body.force) {
+      return NextResponse.json({ error: "clash", clashes }, { status: 409 });
+    }
+
     const customerId = await findOrCreateCustomer(body.customer_name, body.customer_phone, body.customer_email);
 
     const refResult = await sql`SELECT nextval('booking_ref_seq') as seq`;
@@ -151,6 +229,19 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "Booking not found" }, { status: 404 });
     }
     const alreadyInvoiced = !!current[0].invoice_number;
+
+    const dateError = checkDates(body);
+    if (dateError) return NextResponse.json({ error: dateError }, { status: 400 });
+
+    const clashes = await findClashes(
+      Array.isArray(body.vehicles) ? body.vehicles : [],
+      body.pickup_datetime,
+      body.return_datetime || body.dropoff_datetime,
+      body.id,
+    );
+    if (clashes.length > 0 && !body.force) {
+      return NextResponse.json({ error: "clash", clashes }, { status: 409 });
+    }
 
     let customerId = current[0].customer_id;
     if (body.customer_name) {

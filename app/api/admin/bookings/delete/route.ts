@@ -1,24 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { neon } from "@neondatabase/serverless";
+import { requireBoss, isGuardFailure } from "@/lib/guards";
+import { toId } from "@/lib/validate";
+import { logError } from "@/lib/error-log";
 
 const sql = neon(process.env.DATABASE_URL!);
 
+// Deleting a booking erases its money trail, so only Ray can do it, and every
+// related row goes in one transaction — it either all goes or nothing does.
 export async function DELETE(req: NextRequest) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const guard = await requireBoss();
+  if (isGuardFailure(guard)) return guard.response;
 
   try {
-    const { id } = await req.json();
+    const body = await req.json();
+    const id = toId(body?.id);
+    if (!id) return NextResponse.json({ error: "Missing booking id" }, { status: 400 });
 
-    // Also delete any linked expenses
-    await sql`DELETE FROM expenses WHERE booking_id = ${id}`;
-    await sql`DELETE FROM trip_assignments WHERE booking_id = ${id}`;
-    await sql`DELETE FROM bookings WHERE id = ${id}`;
+    await sql.transaction([
+      sql`DELETE FROM expenses WHERE booking_id = ${id}`,
+      sql`DELETE FROM trip_assignments WHERE booking_id = ${id}`,
+      sql`DELETE FROM booking_vehicles WHERE booking_id = ${id}`,
+      sql`DELETE FROM bookings WHERE id = ${id}`,
+    ]);
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    console.error(err);
-    return NextResponse.json({ error: "Database error" }, { status: 500 });
+    await logError("bookings/delete", err);
+    return NextResponse.json({ error: "Could not delete. Nothing was changed." }, { status: 500 });
   }
 }

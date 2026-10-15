@@ -1,0 +1,41 @@
+name: CI
+
+# Runs on every push and on any pull request into main. The point is to catch
+# a broken build on a branch — before it's merged into main and Vercel ships
+# it straight to zuritours.co.tz.
+on:
+  push:
+    branches-ignore:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint --if-present
+
+      - name: Build
+        run: npm run build
+        env:
+          # The build needs these to exist, not to be correct — no route is
+          # actually called during `next build`. Real values live in Vercel.
+          DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci"
+          NEXTAUTH_SECRET: "ci-only-placeholder-secret-not-used-in-production"
+          NEXTAUTH_URL: "http://localhost:3000"
+          AUTH_TRUST_HOST: "true"

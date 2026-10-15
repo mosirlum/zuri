@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { neon } from "@neondatabase/serverless";
 import bcrypt from "bcryptjs";
@@ -41,6 +41,13 @@ export async function POST(req: NextRequest) {
 
     if (!body.full_name || !body.email || !body.password || !body.role) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
+
+    if (!["super_admin", "staff"].includes(body.role)) {
+      return NextResponse.json({ error: "Invalid role" }, { status: 400 });
+    }
+    if (String(body.password).length < 8) {
+      return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
     }
 
     const existing = await sql`SELECT id FROM users WHERE email = ${body.email} LIMIT 1`;
@@ -90,6 +97,12 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "You cannot deactivate your own account" }, { status: 400 });
     }
 
+    if (!["super_admin", "staff"].includes(body.role)) {
+      return NextResponse.json({ error: "Invalid role" }, { status: 400 });
+    }
+    if (body.new_password && String(body.new_password).length < 8) {
+      return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
+    }
     if (body.new_password) {
       const passwordHash = await bcrypt.hash(body.new_password, 10);
       await sql`UPDATE users SET password = ${passwordHash}, updated_at = NOW() WHERE id = ${body.id}`;
