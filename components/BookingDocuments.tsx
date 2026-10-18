@@ -68,6 +68,13 @@ const longDate = (d: string) => {
 
 // Commits on blur rather than on every keystroke, so the field is never
 // rebuilt mid-word and the caret stays where it was put.
+// Values come back from the database and are placed into an editable span as
+// HTML. Escaping them means a stored "<script>" or "<img onerror>" shows up as
+// plain text instead of running.
+function escapeHtml(v: string) {
+  return String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
 function Ed({ value, onChange, placeholder, block }: {
   value: string;
   onChange: (v: string) => void;
@@ -82,7 +89,7 @@ function Ed({ value, onChange, placeholder, block }: {
       data-ph={placeholder || ""}
       onBlur={e => onChange(e.currentTarget.textContent || "")}
       className={`zed ${block ? "zed-block" : ""}`}
-      dangerouslySetInnerHTML={{ __html: value || "" }}
+      dangerouslySetInnerHTML={{ __html: escapeHtml(value || "") }}
     />
   );
 }
