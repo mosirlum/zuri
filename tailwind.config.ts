@@ -13,7 +13,7 @@ const config: Config = {
         cream: "#ede5d3",
         ink: "#1c1814",
         "ink-soft": "#3a3530",
-        muted: "#7a6f60",
+        muted: "#695e50",
         gold: {
           DEFAULT: "#b8843a",
           deep: "#8a5f24",

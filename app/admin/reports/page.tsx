@@ -5,7 +5,7 @@ import { BarChart3, Lock, TrendingUp, TrendingDown, Car, Building2, CalendarChec
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { isVehicleCost } from "@/lib/money-rules";
-import WrittenAnalysis from "@/components/WrittenAnalysis";
+import ProfitDoctorReport from "@/components/ProfitDoctorReport";
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -675,7 +675,8 @@ export default function ReportsPage() {
         <div className="text-center py-12 text-muted text-sm animate-pulse">Loading report...</div>
       ) : !summary ? null : (
         <>
-          {filterMode === "month" && <WrittenAnalysis year={selectedYear} month={selectedMonth} />}
+          {filterMode === "month" && <ProfitDoctorReport year={selectedYear} month={selectedMonth} />}
+          {filterMode === "month" && <h2 className="font-display text-2xl font-medium text-ink pt-4">Full figures</h2>}
 
           {/* Summary cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

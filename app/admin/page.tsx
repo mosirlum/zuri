@@ -135,6 +135,7 @@ export default function AdminDashboard() {
           value={`${stats.availableVehicles}/${stats.totalVehicles}`} color="gold"
           sub={[
             stats.vehiclesOnHire ? `${stats.vehiclesOnHire} on hire` : null,
+            stats.vehiclesLeavingToday ? `${stats.vehiclesLeavingToday} leaving today` : null,
             stats.vehiclesBooked ? `${stats.vehiclesBooked} booked ahead` : null,
           ].filter(Boolean).join(" · ") || "none out"}
           href="/admin/fleet" />
@@ -142,7 +143,9 @@ export default function AdminDashboard() {
         <StatCard icon={Users} label="Drivers Free Today"
           value={`${stats.availableDrivers}/${stats.totalDrivers}`} color="ink"
           sub={[
-            stats.driversOnDuty ? `${stats.driversOnDuty} on duty` : null,
+            stats.driversOnDuty ? `${stats.driversOnDuty} on a trip` : null,
+            stats.driversLeavingToday ? `${stats.driversLeavingToday} leaving today` : null,
+            stats.driversOnLeave ? `${stats.driversOnLeave} on leave` : null,
             stats.driversBooked ? `${stats.driversBooked} booked ahead` : null,
           ].filter(Boolean).join(" · ") || "none out"}
           href="/admin/drivers" />

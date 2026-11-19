@@ -19,21 +19,26 @@ export async function GET() {
           SELECT 1 FROM booking_vehicles bv
           JOIN bookings b ON b.id = bv.booking_id
           WHERE bv.vehicle_id = v.id
-            AND b.status = 'confirmed'
-            AND b.invoice_number IS NULL
+            AND b.status <> 'cancelled'
+            AND b.pickup_datetime > NOW()
+            AND b.pickup_datetime < (date_trunc('day', NOW() AT TIME ZONE 'Africa/Dar_es_Salaam') + INTERVAL '1 day') AT TIME ZONE 'Africa/Dar_es_Salaam'
+        ) AS leaves_today,
+        EXISTS (
+          SELECT 1 FROM booking_vehicles bv
+          JOIN bookings b ON b.id = bv.booking_id
+          WHERE bv.vehicle_id = v.id
+            AND b.status <> 'cancelled'
             AND b.pickup_datetime > NOW()
         ) AS booked_ahead,
         EXISTS (
           SELECT 1 FROM booking_vehicles bv
           JOIN bookings b ON b.id = bv.booking_id
           WHERE bv.vehicle_id = v.id
-            AND b.status = 'confirmed'
-            AND b.invoice_number IS NULL
+            AND b.status <> 'cancelled'
             AND b.pickup_datetime IS NOT NULL
             AND b.pickup_datetime <= NOW()
             AND (
-              COALESCE(b.return_datetime, b.dropoff_datetime) IS NULL
-              OR COALESCE(b.return_datetime, b.dropoff_datetime) >= NOW()
+              COALESCE(b.return_datetime, b.dropoff_datetime, b.pickup_datetime + INTERVAL '1 day') >= NOW()
             )
         ) AS on_trip
       FROM vehicles v
@@ -45,21 +50,26 @@ export async function GET() {
           SELECT 1 FROM booking_vehicles bv
           JOIN bookings b ON b.id = bv.booking_id
           WHERE bv.driver_id = d.id
-            AND b.status = 'confirmed'
-            AND b.invoice_number IS NULL
+            AND b.status <> 'cancelled'
+            AND b.pickup_datetime > NOW()
+            AND b.pickup_datetime < (date_trunc('day', NOW() AT TIME ZONE 'Africa/Dar_es_Salaam') + INTERVAL '1 day') AT TIME ZONE 'Africa/Dar_es_Salaam'
+        ) AS leaves_today,
+        EXISTS (
+          SELECT 1 FROM booking_vehicles bv
+          JOIN bookings b ON b.id = bv.booking_id
+          WHERE bv.driver_id = d.id
+            AND b.status <> 'cancelled'
             AND b.pickup_datetime > NOW()
         ) AS booked_ahead,
         EXISTS (
           SELECT 1 FROM booking_vehicles bv
           JOIN bookings b ON b.id = bv.booking_id
           WHERE bv.driver_id = d.id
-            AND b.status = 'confirmed'
-            AND b.invoice_number IS NULL
+            AND b.status <> 'cancelled'
             AND b.pickup_datetime IS NOT NULL
             AND b.pickup_datetime <= NOW()
             AND (
-              COALESCE(b.return_datetime, b.dropoff_datetime) IS NULL
-              OR COALESCE(b.return_datetime, b.dropoff_datetime) >= NOW()
+              COALESCE(b.return_datetime, b.dropoff_datetime, b.pickup_datetime + INTERVAL '1 day') >= NOW()
             )
         ) AS on_trip
       FROM drivers d
@@ -110,11 +120,14 @@ export async function GET() {
     return NextResponse.json({
       stats: {
         totalVehicles: vehicles.length,
-        availableVehicles: vehicles.filter((v: any) => !v.on_trip && v.status !== "maintenance").length,
+        availableVehicles: vehicles.filter((v: any) => !v.on_trip && !v.leaves_today && v.status !== "maintenance").length,
+        vehiclesLeavingToday: vehicles.filter((v: any) => !v.on_trip && v.leaves_today).length,
         vehiclesOnHire: vehicles.filter((v: any) => v.on_trip).length,
         vehiclesBooked: vehicles.filter((v: any) => !v.on_trip && v.booked_ahead).length,
         totalDrivers: drivers.length,
-        availableDrivers: drivers.filter((d: any) => !d.on_trip && d.status !== "leave").length,
+        availableDrivers: drivers.filter((d: any) => !d.on_trip && !d.leaves_today && d.status !== "leave").length,
+        driversLeavingToday: drivers.filter((d: any) => !d.on_trip && d.leaves_today).length,
+        driversOnLeave: drivers.filter((d: any) => d.status === "leave").length,
         driversOnDuty: drivers.filter((d: any) => d.on_trip).length,
         driversBooked: drivers.filter((d: any) => !d.on_trip && d.booked_ahead).length,
         confirmedBookings: confirmedBookings.length,

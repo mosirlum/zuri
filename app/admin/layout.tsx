@@ -29,6 +29,23 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
 
+  // Text size. Some of the team read with glasses, so the whole admin is a
+  // step larger than the website by default, and each person can go larger
+  // still. Everything is sized in rem, so changing the root size scales it all.
+  const [textSize, setTextSize] = useState<"md" | "lg" | "xl">("lg");
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("zuri-text-size");
+      if (saved === "md" || saved === "lg" || saved === "xl") setTextSize(saved);
+    } catch { /* storage blocked: keep the default */ }
+  }, []);
+  useEffect(() => {
+    const sizes = { md: "100%", lg: "112.5%", xl: "125%" } as const;
+    document.documentElement.style.fontSize = sizes[textSize];
+    try { localStorage.setItem("zuri-text-size", textSize); } catch { /* ignore */ }
+    return () => { document.documentElement.style.fontSize = ""; };
+  }, [textSize]);
+
   useEffect(() => {
     if (status === "unauthenticated") {
       window.location.href = "/login";
@@ -65,7 +82,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const userName = session?.user?.name || "";
 
   return (
-    <div className="min-h-screen bg-paper-soft flex">
+    <div className="min-h-screen bg-paper-soft flex font-normal">
       {/* Sidebar */}
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-ink text-paper flex flex-col transition-transform duration-300 ${
         sidebarOpen ? "translate-x-0" : "-translate-x-full"
@@ -96,7 +113,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 href={item.href}
                 onClick={() => setSidebarOpen(false)}
                 className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
-                  isActive ? "bg-gold/20 text-white shadow-[inset_3px_0_0_#b8843a]" : "text-paper/60 hover:text-paper hover:bg-paper/5 hover:translate-x-0.5"
+                  isActive ? "bg-gold/20 text-white shadow-[inset_3px_0_0_#b8843a]" : "text-paper/80 hover:text-paper hover:bg-paper/5 hover:translate-x-0.5"
                 }`}
               >
                 <Icon className="w-4 h-4 flex-shrink-0" />
@@ -119,6 +136,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <div className="text-sm font-medium text-paper truncate">{userName}</div>
               <div className="text-[0.65rem] text-paper/50 capitalize">{role?.replace("_", " ")}</div>
             </div>
+          </div>
+          <div className="flex items-center gap-1 px-3 pb-3" role="group" aria-label="Text size">
+            <span className="text-[0.7rem] text-paper/50 mr-auto">Text size</span>
+            {(["md", "lg", "xl"] as const).map((s, i) => (
+              <button key={s} onClick={() => setTextSize(s)} aria-pressed={textSize === s} title={["Normal", "Large", "Extra large"][i]}
+                className={`w-9 h-8 rounded-lg font-semibold transition-colors ${textSize === s ? "bg-gold text-ink" : "text-paper/60 hover:bg-paper/10"}`}
+                style={{ fontSize: ["12px", "14px", "17px"][i] }}>A</button>
+            ))}
           </div>
           <button
             onClick={handleLogout}

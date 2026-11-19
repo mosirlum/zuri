@@ -14,6 +14,7 @@ const look: Record<string, { bar: string; chip: string; label: string; Icon: any
 export type FindingData = {
   id: string; severity: "critical" | "warning" | "info" | "good"; title: string; what: string; why: string;
   actions: string[]; impact: number | null; evidence: { label: string; value: string }[];
+  items?: { label: string; value: string }[]; fixFirst?: boolean;
 };
 
 // One thing the system noticed, written the way an adviser would say it:
@@ -28,7 +29,7 @@ export default function FindingCard({ f, defaultOpen = false }: { f: FindingData
         <s.Icon className={`w-5 h-5 mt-0.5 flex-none ${s.tint}`} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2 mb-1">
-            <span className={`text-[0.65rem] font-semibold tracking-widest uppercase px-2 py-0.5 rounded-full ${s.chip}`}>{s.label}</span>
+            <span className={`text-[0.65rem] font-semibold tracking-widest uppercase px-2 py-0.5 rounded-full ${s.chip}`}>{f.fixFirst ? "Fix first" : s.label}</span>
             {f.impact && f.impact > 0 && f.severity !== "good" && (
               <span className="text-[0.7rem] font-semibold px-2 py-0.5 rounded-full bg-ink text-paper">About TZS {short(f.impact)}</span>
             )}
@@ -53,6 +54,15 @@ export default function FindingCard({ f, defaultOpen = false }: { f: FindingData
                 ))}
               </ol>
             </div>
+            {f.items && f.items.length > 0 && (
+              <ul className="rounded-xl border border-ink/10 divide-y divide-ink/5">
+                {f.items.map((it, i) => (
+                  <li key={i} className="flex flex-wrap justify-between gap-x-4 gap-y-0.5 px-3 py-2">
+                    <span className="text-ink font-medium">{it.label}</span><span className="text-ink-soft tabular-nums">{it.value}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
             {f.evidence.length > 0 && (
               <div className="flex flex-wrap gap-2 pt-1">
                 {f.evidence.map(e => (

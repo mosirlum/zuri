@@ -21,6 +21,7 @@ export type Seg = { t: string; k?: "g" | "r" | "a" | "b" };
 export type Finding = {
   id: string; severity: "critical" | "warning" | "info" | "good"; title: string; what: string; why: string;
   actions: string[]; impact: number | null; evidence: { label: string; value: string }[];
+  items?: { label: string; value: string }[]; fixFirst?: boolean;
 };
 const p0label = (y: number, m: number) => MONTHS[new Date(Date.UTC(y, m, 1)).getUTCMonth()];
 export type AttentionItem = {
@@ -72,7 +73,7 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
                (SELECT COUNT(*)::int FROM booking_vehicles x WHERE x.booking_id = b.id
                   AND x.driver_id IS NULL AND COALESCE(x.is_borrowed, false) = false) AS no_driver
         FROM bookings b LEFT JOIN customers c ON c.id = b.customer_id
-        WHERE b.status = 'confirmed' AND b.invoice_number IS NULL
+        WHERE b.status <> 'cancelled'
           AND b.pickup_datetime >= NOW() AND b.pickup_datetime < NOW() + INTERVAL '3 days'
         ORDER BY b.pickup_datetime ASC`,
   ]);
@@ -147,7 +148,7 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
   }
 
   // ── money (boss only) ───────────────────────────────────────────────────
-  const [revHist, expHist, prevRev, prevExp, daily, recv, bvRows, custRows, svcRows] = await Promise.all([
+  const [revHist, expHist, prevRev, prevExp, daily, recv, bvRows, custRows, svcRows, drvRows2, jobRows] = await Promise.all([
     sql`SELECT to_char(pickup_datetime::date, 'YYYY-MM') AS ym, COALESCE(SUM(paid_amount), 0) AS revenue, COUNT(*)::int AS jobs
         FROM bookings WHERE pickup_datetime::date BETWEEN ${hist0}::date AND ${endISO}::date GROUP BY 1`,
     sql`SELECT to_char(expense_date, 'YYYY-MM') AS ym, expense_type, category, COALESCE(SUM(amount), 0) AS amount
@@ -155,7 +156,7 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
     sql`SELECT COALESCE(SUM(paid_amount), 0) AS revenue, COUNT(*)::int AS jobs FROM bookings WHERE pickup_datetime::date BETWEEN ${prevStart}::date AND ${prevEnd}::date`,
     sql`SELECT expense_type, category, COALESCE(SUM(amount), 0) AS amount FROM expenses
         WHERE expense_date BETWEEN ${prevStart}::date AND ${prevEnd}::date GROUP BY 1, 2`,
-    sql`SELECT pickup_datetime::date::text AS d, COALESCE(SUM(paid_amount), 0) AS rev FROM bookings
+    sql`SELECT pickup_datetime::date::text AS d, COALESCE(SUM(paid_amount), 0) AS rev, COUNT(*)::int AS jobs FROM bookings
         WHERE pickup_datetime::date BETWEEN ${dailyFrom}::date AND ${dailyTo}::date GROUP BY 1`,
     sql`SELECT b.id, b.booking_ref, b.invoice_number, b.invoice_date, b.paid_amount, c.full_name AS customer
         FROM bookings b LEFT JOIN customers c ON c.id = b.customer_id
@@ -173,6 +174,16 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
         GROUP BY b.customer_id, c.full_name`,
     sql`SELECT COALESCE(service_type, 'other') AS service, COALESCE(SUM(paid_amount), 0) AS rev, COUNT(*)::int AS jobs
         FROM bookings WHERE pickup_datetime::date BETWEEN ${startISO}::date AND ${endISO}::date GROUP BY 1 ORDER BY rev DESC`,
+    sql`SELECT d.full_name AS name, COUNT(*)::int AS trips,
+               COALESCE(SUM(b.paid_amount / GREATEST(1, (SELECT COUNT(*) FROM booking_vehicles x WHERE x.booking_id = b.id))), 0) AS rev
+        FROM booking_vehicles bv JOIN bookings b ON b.id = bv.booking_id JOIN drivers d ON d.id = bv.driver_id
+        WHERE b.status <> 'cancelled' AND b.pickup_datetime::date BETWEEN ${startISO}::date AND ${endISO}::date
+        GROUP BY d.full_name ORDER BY rev DESC`,
+    sql`SELECT b.id, b.booking_ref, b.pickup_datetime, b.service_type, b.status, b.paid_amount, b.quoted_amount,
+               b.invoice_number, b.payment_status, c.full_name AS customer
+        FROM bookings b LEFT JOIN customers c ON c.id = b.customer_id
+        WHERE b.pickup_datetime::date BETWEEN ${startISO}::date AND ${endISO}::date
+        ORDER BY b.pickup_datetime DESC LIMIT 300`,
   ]);
 
   // Six-month history, oldest first.
@@ -200,7 +211,8 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
 
   // Cumulative revenue through the month.
   const byDay: Record<string, number> = {};
-  for (const r of daily as any[]) byDay[r.d] = num(r.rev);
+  const jobsByDay: Record<string, number> = {};
+  for (const r of daily as any[]) { byDay[r.d] = num(r.rev); jobsByDay[r.d] = num(r.jobs); }
   let acc = 0;
   const cumulative = Array.from({ length: elapsed }, (_, i) => { acc += byDay[iso(new Date(Date.UTC(y, m, i + 1)))] || 0; return acc; });
 
@@ -374,6 +386,7 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
       why: "Money owed is not money you can use. The older an invoice gets, the less likely it is paid in full, and unpaid jobs still cost you fuel, allowances and wages.",
       actions: ["Call the three oldest customers today and agree a payment date.", "Ask for a deposit on new jobs from customers who pay late.", "Record each payment the day it arrives so this list stays honest."],
       impact: receivables.b2 > 0 ? receivables.b2 : receivables.b1,
+      items: recvItems.slice(0, 8).map(r => ({ label: `${r.customer || "Customer"} · ${r.invoice || r.ref}`, value: `${tzs(r.amount)} · ${r.age} days` })),
       evidence: [ev("Unpaid", tzs(receivables.total)), ev("Over 30 days", tzs(receivables.b2)), ev("8 to 30 days", tzs(receivables.b1))],
     });
   }
@@ -385,6 +398,7 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
       why: "The payment clock only starts when the invoice goes out. Every day of delay is a day later that cash arrives.",
       actions: ["Record the invoice for each finished job today.", "Make invoicing part of closing a job, not a separate chore."],
       impact: endedTotal > 0 ? endedTotal : null,
+      items: (attnEnded as any[]).slice(0, 8).map(b => ({ label: `${b.booking_ref} · ${b.customer || "Customer"}`, value: num(b.quoted_amount) ? tzs(num(b.quoted_amount)) : "no quote" })),
       evidence: [ev("Jobs waiting", String(endedCount)), ev("Quoted value", endedTotal > 0 ? tzs(endedTotal) : "not quoted")],
     });
   }
@@ -399,6 +413,7 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
       why: "A car that works a lot but keeps little is the easiest to fix: the price, not the work, is the problem.",
       actions: [`Quote about TZS ${Math.round(x.sug).toLocaleString("en-US")} a day for it instead of ${Math.round(x.cur).toLocaleString("en-US")}.`, "Check its fuel and allowance lines for anything unusual."],
       impact: x.gain,
+      items: [{ label: `${x.v.name} ${x.v.plate}`, value: `TZS ${Math.round(x.cur).toLocaleString("en-US")} → TZS ${Math.round(x.sug).toLocaleString("en-US")} a day` }],
       evidence: [ev("Days worked", `${x.v.days} of ${elapsed}`), ev("Earned per day", tzs(x.cur)), ev("Needed per day", tzs(x.sug))],
     });
   }
@@ -414,6 +429,7 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
       why: "A car that is not working still carries insurance, licences and depreciation. Every idle day is revenue that never arrives.",
       actions: ["Offer idle cars to regular customers such as schools, hotels and companies for weekday transfers.", "Check whether a document or repair is keeping a car off the road."],
       impact: Math.round(idleDays * perDay * 0.3),
+      items: idleCars.map(v => ({ label: `${v.name} ${v.plate}`, value: `worked ${v.days} of ${elapsed} days` })),
       evidence: [ev("Idle car-days", String(idleDays)), ev("Average earned per working day", tzs(perDay)), ev("Estimate assumes", "30% of idle days filled")],
     });
   }
@@ -457,9 +473,32 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
   }
   const sevOrder = { critical: 0, warning: 1, info: 2, good: 3 } as const;
   findings.sort((a, b) => sevOrder[a.severity] - sevOrder[b.severity] || (b.impact || 0) - (a.impact || 0));
+  findings.filter(f => f.severity !== "good" && (f.impact || 0) > 0).sort((a, b) => (b.impact || 0) - (a.impact || 0)).slice(0, 3).forEach(f => { f.fixFirst = true; });
+  const priceFixes = vehicles.filter(v => v.days > 0 && v.revenue > 0 && (v.margin ?? 100) < T).map(v => {
+    const perDay = v.revenue / v.days, costDay = v.cost / v.days, sug = costDay / (1 - T / 100);
+    return { name: v.name, plate: v.plate, perDay, costDay, margin: v.margin, suggested: sug, extra: Math.max(0, sug - perDay) * v.days };
+  }).sort((a, b) => b.extra - a.extra);
+  const dailySeries = Array.from({ length: elapsed }, (_, i) => {
+    const k = iso(new Date(Date.UTC(y, m, i + 1)));
+    return { day: i + 1, revenue: byDay[k] || 0, jobs: jobsByDay[k] || 0 };
+  });
+  const drivers = (drvRows2 as any[]).map(d => ({ name: d.name as string, trips: d.trips as number, revenue: num(d.rev), share: rev > 0 ? Math.round((num(d.rev) / rev) * 100) : 0 }));
+  const jobs = (jobRows as any[]).map(b => ({
+    id: b.id as number, ref: b.booking_ref as string, date: b.pickup_datetime, customer: b.customer || "", service: pretty(b.service_type || "other"),
+    amount: num(b.paid_amount) || num(b.quoted_amount),
+    state: b.status === "cancelled" ? "Cancelled" : b.payment_status === "paid" ? "Paid" : b.invoice_number ? "Invoiced, unpaid" : "Not invoiced",
+  }));
+  const quick: { tone: "good" | "bad" | "info"; title: string; text: string }[] = [];
+  if (prevRevenue > 0) { const c = Math.round(((rev - prevRevenue) / prevRevenue) * 100); quick.push({ tone: c >= 0 ? "good" : "bad", title: `Revenue ${c >= 0 ? "increased" : "fell"} by ${Math.abs(c)}%`, text: `Compared to ${isCurrent ? "the same days in " : ""}${prevLabel}.` }); }
+  if (services[0]) quick.push({ tone: "info", title: `${services[0].name} is your top service`, text: `${services[0].jobs} job${services[0].jobs === 1 ? "" : "s"}, ${services[0].share}% of revenue.` });
+  if (vehicles[0] && vehicles[0].days > 0) quick.push({ tone: "info", title: `${vehicles[0].name} is your most profitable car`, text: `${tzs(vehicles[0].profit)} profit, worked ${vehicles[0].days} of ${elapsed} days.` });
+  if (receivables.total > 0) quick.push({ tone: "bad", title: `${tzs(receivables.total)} still unpaid`, text: `${receivables.count} invoice${receivables.count === 1 ? "" : "s"} waiting.` });
+  const docsSoon = attention.filter(a => a.id.startsWith("vd-") || a.id.startsWith("dd-")).length;
+  if (docsSoon) quick.push({ tone: "bad", title: `${docsSoon} document${docsSoon === 1 ? "" : "s"} expiring within 14 days`, text: "See Compliance before the next trip." });
+  const summary = rev > 0 ? { trip: (cur.vehicleCosts / rev) * 100, company: (cur.companyCosts / rev) * 100, profit: (cur.net / rev) * 100 } : null;
   const doctor = {
     findings: findings.filter(f => f.severity !== "good").slice(0, 8).concat(findings.filter(f => f.severity === "good").slice(0, 2)),
-    totalImpact: findings.filter(f => f.severity !== "good" && f.id !== "margin" && f.impact).reduce((s, f) => s + (f.impact || 0), 0),
+    totalImpact: findings.filter(f => f.severity !== "good" && f.id !== "margin" && f.id !== "pace" && f.impact).reduce((s, f) => s + (f.impact || 0), 0),
   };
   const comparison = {
     label: prevLabel, sameDays: isCurrent,
@@ -483,7 +522,7 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
       revenue: cur.revenue, vehicleCosts: cur.vehicleCosts, companyCosts: cur.companyCosts, net: cur.net, margin, jobs: cur.jobs,
       prev: { label: prevLabel, revenue: prevRevenue, net: prevNet, margin: prevMargin },
       revenueDelta: pct(cur.revenue, prevRevenue), netDelta: prevNet > 0 ? pct(cur.net, prevNet) : null,
-      cumulative, history, direction, forecast, weekVsUsual, receivables, vehicles, customers, price, topCost, services, costMoves: costMoves.slice(0, 5), doctor, comparison,
+      cumulative, history, direction, forecast, weekVsUsual, receivables, vehicles, customers, price, topCost, services, costMoves: costMoves.slice(0, 5), doctor, comparison, priceFixes, dailySeries, drivers, jobList: jobs, quick, summary,
     },
     analysis: null as null | { paragraphs: Seg[][]; actions: string[] },
   };

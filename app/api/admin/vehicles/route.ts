@@ -20,8 +20,7 @@ export async function GET() {
           FROM booking_vehicles bv
           JOIN bookings b ON b.id = bv.booking_id
           WHERE bv.vehicle_id = v.id
-            AND b.status = 'confirmed'
-            AND b.invoice_number IS NULL
+            AND b.status <> 'cancelled'
             AND b.pickup_datetime > NOW()
           ORDER BY b.pickup_datetime ASC
           LIMIT 1
@@ -31,8 +30,7 @@ export async function GET() {
           FROM booking_vehicles bv
           JOIN bookings b ON b.id = bv.booking_id
           WHERE bv.vehicle_id = v.id
-            AND b.status = 'confirmed'
-            AND b.invoice_number IS NULL
+            AND b.status <> 'cancelled'
             AND b.pickup_datetime > NOW()
           ORDER BY b.pickup_datetime ASC
           LIMIT 1
@@ -42,13 +40,11 @@ export async function GET() {
           FROM booking_vehicles bv
           JOIN bookings b ON b.id = bv.booking_id
           WHERE bv.vehicle_id = v.id
-            AND b.status = 'confirmed'
-            AND b.invoice_number IS NULL
+            AND b.status <> 'cancelled'
             AND b.pickup_datetime IS NOT NULL
             AND b.pickup_datetime <= NOW()
             AND (
-              COALESCE(b.return_datetime, b.dropoff_datetime) IS NULL
-              OR COALESCE(b.return_datetime, b.dropoff_datetime) >= NOW()
+              COALESCE(b.return_datetime, b.dropoff_datetime, b.pickup_datetime + INTERVAL '1 day') >= NOW()
             )
           ORDER BY b.pickup_datetime DESC
           LIMIT 1
