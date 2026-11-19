@@ -23,27 +23,22 @@ export default function AdminDashboard() {
   });
   const [expiringDocs, setExpiringDocs] = useState<any[]>([]);
   const [recentBookings, setRecentBookings] = useState<any[]>([]);
-  const [vehicles, setVehicles] = useState<any[]>([]);
-  const [bookings, setBookings] = useState<any[]>([]);
+  const [fleet, setFleet] = useState<any>({ total: 0, available: 0, on_hire: 0, booked: 0, maintenance: 0 });
+  const [totals, setTotals] = useState<any>({ bookings: 0, completed: 0, cancelled: 0, outstanding: 0 });
+  const [week, setWeek] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { fetchData(); }, []);
 
   const fetchData = async () => {
     try {
-      const [dashRes, vehRes, bookRes] = await Promise.all([
-        fetch("/api/admin/dashboard"),
-        fetch("/api/admin/vehicles"),
-        fetch("/api/admin/bookings"),
-      ]);
-      const data = await dashRes.json();
+      const data = await (await fetch("/api/admin/dashboard")).json();
       setStats(data.stats);
-      setExpiringDocs(data.expiringDocs);
-      setRecentBookings(data.recentBookings);
-      const veh = await vehRes.json();
-      const book = await bookRes.json();
-      setVehicles(Array.isArray(veh) ? veh : []);
-      setBookings(Array.isArray(book) ? book : []);
+      setExpiringDocs(data.expiringDocs || []);
+      setRecentBookings(data.recentBookings || []);
+      if (data.fleet) setFleet(data.fleet);
+      if (data.totals) setTotals(data.totals);
+      if (data.week) setWeek(data.week);
     } catch (err) {
       console.error(err);
     } finally {
@@ -65,12 +60,12 @@ export default function AdminDashboard() {
   };
 
   const fleetSplit = [
-    { key: "available", label: "Available", count: vehicles.filter(v => v.status === "available").length, color: "#16a34a" },
-    { key: "on_hire", label: "On Hire", count: vehicles.filter(v => v.status === "on_hire").length, color: "#2563eb" },
-    { key: "booked", label: "Booked", count: vehicles.filter(v => v.status === "booked").length, color: "#b8843a" },
-    { key: "maintenance", label: "Maintenance", count: vehicles.filter(v => v.status === "maintenance").length, color: "#d97706" },
+    { key: "available", label: "Available", count: fleet.available, color: "#16a34a" },
+    { key: "on_hire", label: "On Hire", count: fleet.on_hire, color: "#2563eb" },
+    { key: "booked", label: "Booked", count: fleet.booked, color: "#b8843a" },
+    { key: "maintenance", label: "Maintenance", count: fleet.maintenance, color: "#d97706" },
   ];
-  const fleetTotal = vehicles.length || 1;
+  const fleetTotal = fleet.total || 1;
 
   // Stacked arcs on one circle — each slice starts where the last one ended.
   let arcOffset = 0;
@@ -88,15 +83,8 @@ export default function AdminDashboard() {
     return d;
   });
 
-  const dayCounts = days.map(d => {
-    const next = new Date(d);
-    next.setDate(d.getDate() + 1);
-    return bookings.filter(b => {
-      if (!b.pickup_datetime) return false;
-      const t = new Date(b.pickup_datetime).getTime();
-      return t >= d.getTime() && t < next.getTime();
-    }).length;
-  });
+  const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const dayCounts = days.map(d => week[dayKey(d)] || 0);
 
   const peak = Math.max(...dayCounts, 1);
   const W = 320, H = 90;
@@ -108,12 +96,9 @@ export default function AdminDashboard() {
   const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
   const areaPath = `${linePath} L${W},${H} L0,${H} Z`;
 
-  const invoiced = bookings.filter(b => b.invoice_number);
-  const outstanding = invoiced
-    .filter(b => b.payment_status !== "paid")
-    .reduce((s, b) => s + (parseFloat(b.paid_amount) || 0), 0);
-  const completedCount = bookings.filter(b => b.status === "completed").length;
-  const cancelledCount = bookings.filter(b => b.status === "cancelled").length;
+  const outstanding = totals.outstanding;
+  const completedCount = totals.completed;
+  const cancelledCount = totals.cancelled;
 
   const isBoss = role === "super_admin";
 
@@ -180,7 +165,7 @@ export default function AdminDashboard() {
                 ))}
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="font-display text-2xl font-medium text-ink leading-none">{vehicles.length}</span>
+                <span className="font-display text-2xl font-medium text-ink leading-none">{fleet.total}</span>
                 <span className="text-[0.6rem] text-muted uppercase tracking-widest mt-0.5">Vehicles</span>
               </div>
             </div>
@@ -222,7 +207,7 @@ export default function AdminDashboard() {
           </div>
           <div className="grid grid-cols-3 divide-x divide-ink/5 border-t border-ink/10 mt-4">
             <div className="px-6 py-4">
-              <div className="font-display text-2xl font-medium text-ink">{bookings.length}</div>
+              <div className="font-display text-2xl font-medium text-ink">{totals.bookings}</div>
               <div className="text-xs text-muted mt-0.5">Total bookings</div>
             </div>
             <div className="px-6 py-4">

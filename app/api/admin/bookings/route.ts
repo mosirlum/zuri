@@ -51,7 +51,10 @@ export async function GET() {
       GROUP BY b.id, c.full_name, c.phone, c.email
       ORDER BY b.created_at DESC
     `;
-    return NextResponse.json(bookings);
+    // The printed delivery note and invoice (document_data) can be large and
+    // the list never shows it, so it is left out here and loaded only when a
+    // booking's documents are opened.
+    return NextResponse.json(bookings.map(({ document_data, ...b }: any) => ({ ...b, has_documents: !!document_data })));
   } catch (err) {
     console.error(err);
     return NextResponse.json({ error: "Database error" }, { status: 500 });

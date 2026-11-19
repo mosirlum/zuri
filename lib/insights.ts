@@ -55,9 +55,50 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
   const prevEnd = iso(new Date(Date.UTC(y, m - 1, Math.min(elapsed, prevDays))));
   const dailyFrom = [startISO, iso(new Date(Date.UTC(nowY, nowM, nowD - 34)))].sort()[0];
   const dailyTo = isCurrent ? endISO : [endISO, todayISO].sort()[1];
-  const target = await getTargetMargin();
+  const targetP = getTargetMargin();
+  // Every query goes out at once: they do not depend on each other, and each is
+  // its own round trip to the database.
+  const moneyP = !opts.money ? null : Promise.all([
+    sql`SELECT to_char(pickup_datetime::date, 'YYYY-MM') AS ym, COALESCE(SUM(paid_amount), 0) AS revenue, COUNT(*)::int AS jobs
+        FROM bookings WHERE pickup_datetime::date BETWEEN ${hist0}::date AND ${endISO}::date GROUP BY 1`,
+    sql`SELECT to_char(expense_date, 'YYYY-MM') AS ym, expense_type, category, COALESCE(SUM(amount), 0) AS amount
+        FROM expenses WHERE expense_date BETWEEN ${hist0}::date AND ${endISO}::date GROUP BY 1, 2, 3`,
+    sql`SELECT COALESCE(SUM(paid_amount), 0) AS revenue, COUNT(*)::int AS jobs FROM bookings WHERE pickup_datetime::date BETWEEN ${prevStart}::date AND ${prevEnd}::date`,
+    sql`SELECT expense_type, category, COALESCE(SUM(amount), 0) AS amount FROM expenses
+        WHERE expense_date BETWEEN ${prevStart}::date AND ${prevEnd}::date GROUP BY 1, 2`,
+    sql`SELECT pickup_datetime::date::text AS d, COALESCE(SUM(paid_amount), 0) AS rev, COUNT(*)::int AS jobs FROM bookings
+        WHERE pickup_datetime::date BETWEEN ${dailyFrom}::date AND ${dailyTo}::date GROUP BY 1`,
+    sql`SELECT b.id, b.booking_ref, b.invoice_number, b.invoice_date, b.paid_amount, c.full_name AS customer
+        FROM bookings b LEFT JOIN customers c ON c.id = b.customer_id
+        WHERE b.invoice_number IS NOT NULL AND COALESCE(b.payment_status, 'unpaid') <> 'paid'`,
+    sql`SELECT bv.vehicle_id, b.paid_amount, b.pickup_datetime,
+               COALESCE(b.return_datetime, b.dropoff_datetime) AS end_dt,
+               bv.fuel_cost, bv.driver_allowance, bv.emergency_cost, bv.owner_payout_amount,
+               (SELECT COUNT(*)::int FROM booking_vehicles x WHERE x.booking_id = bv.booking_id) AS n
+        FROM booking_vehicles bv JOIN bookings b ON b.id = bv.booking_id
+        WHERE bv.vehicle_id IS NOT NULL AND b.pickup_datetime::date BETWEEN ${startISO}::date AND ${endISO}::date`,
+    sql`SELECT b.customer_id, c.full_name, COALESCE(SUM(b.paid_amount), 0) AS rev, COUNT(*)::int AS jobs,
+               EXISTS (SELECT 1 FROM bookings o WHERE o.customer_id = b.customer_id AND o.pickup_datetime::date < ${startISO}::date) AS is_returning
+        FROM bookings b LEFT JOIN customers c ON c.id = b.customer_id
+        WHERE b.customer_id IS NOT NULL AND b.pickup_datetime::date BETWEEN ${startISO}::date AND ${endISO}::date
+        GROUP BY b.customer_id, c.full_name`,
+    sql`SELECT COALESCE(service_type, 'other') AS service, COALESCE(SUM(paid_amount), 0) AS rev, COUNT(*)::int AS jobs
+        FROM bookings WHERE pickup_datetime::date BETWEEN ${startISO}::date AND ${endISO}::date GROUP BY 1 ORDER BY rev DESC`,
+    sql`SELECT d.full_name AS name, COUNT(*)::int AS trips,
+               COALESCE(SUM(b.paid_amount / GREATEST(1, (SELECT COUNT(*) FROM booking_vehicles x WHERE x.booking_id = b.id))), 0) AS rev
+        FROM booking_vehicles bv JOIN bookings b ON b.id = bv.booking_id JOIN drivers d ON d.id = bv.driver_id
+        WHERE b.status <> 'cancelled' AND b.pickup_datetime::date BETWEEN ${startISO}::date AND ${endISO}::date
+        GROUP BY d.full_name ORDER BY rev DESC`,
+    sql`SELECT b.id, b.booking_ref, b.pickup_datetime, b.service_type, b.status, b.paid_amount, b.quoted_amount,
+               b.invoice_number, b.payment_status, c.full_name AS customer
+        FROM bookings b LEFT JOIN customers c ON c.id = b.customer_id
+        WHERE b.pickup_datetime::date BETWEEN ${startISO}::date AND ${endISO}::date
+        ORDER BY b.pickup_datetime DESC LIMIT 300`,
+  ]);
 
-  const [vehRows, drvRows, attnEnded, attnNoDriver] = await Promise.all([
+  moneyP?.catch(() => { /* reported where it is awaited */ });
+  const [target, vehRows, drvRows, attnEnded, attnNoDriver] = await Promise.all([
+    targetP,
     sql`SELECT id, make, model, plate_number, status, insurance_expiry, operating_licence_expiry,
                road_worthiness_expiry, registration_expiry, tra_sticker_expiry, next_service_date
         FROM vehicles`,
@@ -148,43 +189,7 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
   }
 
   // ── money (boss only) ───────────────────────────────────────────────────
-  const [revHist, expHist, prevRev, prevExp, daily, recv, bvRows, custRows, svcRows, drvRows2, jobRows] = await Promise.all([
-    sql`SELECT to_char(pickup_datetime::date, 'YYYY-MM') AS ym, COALESCE(SUM(paid_amount), 0) AS revenue, COUNT(*)::int AS jobs
-        FROM bookings WHERE pickup_datetime::date BETWEEN ${hist0}::date AND ${endISO}::date GROUP BY 1`,
-    sql`SELECT to_char(expense_date, 'YYYY-MM') AS ym, expense_type, category, COALESCE(SUM(amount), 0) AS amount
-        FROM expenses WHERE expense_date BETWEEN ${hist0}::date AND ${endISO}::date GROUP BY 1, 2, 3`,
-    sql`SELECT COALESCE(SUM(paid_amount), 0) AS revenue, COUNT(*)::int AS jobs FROM bookings WHERE pickup_datetime::date BETWEEN ${prevStart}::date AND ${prevEnd}::date`,
-    sql`SELECT expense_type, category, COALESCE(SUM(amount), 0) AS amount FROM expenses
-        WHERE expense_date BETWEEN ${prevStart}::date AND ${prevEnd}::date GROUP BY 1, 2`,
-    sql`SELECT pickup_datetime::date::text AS d, COALESCE(SUM(paid_amount), 0) AS rev, COUNT(*)::int AS jobs FROM bookings
-        WHERE pickup_datetime::date BETWEEN ${dailyFrom}::date AND ${dailyTo}::date GROUP BY 1`,
-    sql`SELECT b.id, b.booking_ref, b.invoice_number, b.invoice_date, b.paid_amount, c.full_name AS customer
-        FROM bookings b LEFT JOIN customers c ON c.id = b.customer_id
-        WHERE b.invoice_number IS NOT NULL AND COALESCE(b.payment_status, 'unpaid') <> 'paid'`,
-    sql`SELECT bv.vehicle_id, b.paid_amount, b.pickup_datetime,
-               COALESCE(b.return_datetime, b.dropoff_datetime) AS end_dt,
-               bv.fuel_cost, bv.driver_allowance, bv.emergency_cost, bv.owner_payout_amount,
-               (SELECT COUNT(*)::int FROM booking_vehicles x WHERE x.booking_id = bv.booking_id) AS n
-        FROM booking_vehicles bv JOIN bookings b ON b.id = bv.booking_id
-        WHERE bv.vehicle_id IS NOT NULL AND b.pickup_datetime::date BETWEEN ${startISO}::date AND ${endISO}::date`,
-    sql`SELECT b.customer_id, c.full_name, COALESCE(SUM(b.paid_amount), 0) AS rev, COUNT(*)::int AS jobs,
-               EXISTS (SELECT 1 FROM bookings o WHERE o.customer_id = b.customer_id AND o.pickup_datetime::date < ${startISO}::date) AS is_returning
-        FROM bookings b LEFT JOIN customers c ON c.id = b.customer_id
-        WHERE b.customer_id IS NOT NULL AND b.pickup_datetime::date BETWEEN ${startISO}::date AND ${endISO}::date
-        GROUP BY b.customer_id, c.full_name`,
-    sql`SELECT COALESCE(service_type, 'other') AS service, COALESCE(SUM(paid_amount), 0) AS rev, COUNT(*)::int AS jobs
-        FROM bookings WHERE pickup_datetime::date BETWEEN ${startISO}::date AND ${endISO}::date GROUP BY 1 ORDER BY rev DESC`,
-    sql`SELECT d.full_name AS name, COUNT(*)::int AS trips,
-               COALESCE(SUM(b.paid_amount / GREATEST(1, (SELECT COUNT(*) FROM booking_vehicles x WHERE x.booking_id = b.id))), 0) AS rev
-        FROM booking_vehicles bv JOIN bookings b ON b.id = bv.booking_id JOIN drivers d ON d.id = bv.driver_id
-        WHERE b.status <> 'cancelled' AND b.pickup_datetime::date BETWEEN ${startISO}::date AND ${endISO}::date
-        GROUP BY d.full_name ORDER BY rev DESC`,
-    sql`SELECT b.id, b.booking_ref, b.pickup_datetime, b.service_type, b.status, b.paid_amount, b.quoted_amount,
-               b.invoice_number, b.payment_status, c.full_name AS customer
-        FROM bookings b LEFT JOIN customers c ON c.id = b.customer_id
-        WHERE b.pickup_datetime::date BETWEEN ${startISO}::date AND ${endISO}::date
-        ORDER BY b.pickup_datetime DESC LIMIT 300`,
-  ]);
+  const [revHist, expHist, prevRev, prevExp, daily, recv, bvRows, custRows, svcRows, drvRows2, jobRows] = (await moneyP)!;
 
   // Six-month history, oldest first.
   const history = Array.from({ length: 6 }, (_, i) => {

@@ -12,7 +12,7 @@ export async function GET() {
     // A car or driver counts as out when a live booking covers today. That
     // rule lives in one place so the dashboard, fleet list and driver list
     // can never disagree about who is free.
-    const vehicles = await sql`
+    const vehiclesQ = sql`
       SELECT v.status, v.insurance_expiry, v.operating_licence_expiry, v.road_worthiness_expiry,
              v.registration_expiry, v.tra_sticker_expiry, v.make, v.model,
         EXISTS (
@@ -44,7 +44,7 @@ export async function GET() {
       FROM vehicles v
     `;
 
-    const drivers = await sql`
+    const driversQ = sql`
       SELECT d.status, d.license_expiry, d.psv_badge_expiry, d.good_conduct_expiry, d.full_name,
         EXISTS (
           SELECT 1 FROM booking_vehicles bv
@@ -74,8 +74,21 @@ export async function GET() {
         ) AS on_trip
       FROM drivers d
     `;
-    const confirmedBookings = await sql`SELECT id FROM bookings WHERE status = 'confirmed'`;
-    const recentBookings = await sql`SELECT booking_ref, status, service_type FROM bookings ORDER BY created_at DESC LIMIT 5`;
+    // All queries go out together; each one is a separate round trip to the
+    // database, so waiting for them one by one made the dashboard slow.
+    const [vehicles, drivers, confirmedBookings, recentBookings, totalsRows, weekRows] = await Promise.all([
+      vehiclesQ,
+      driversQ,
+      sql`SELECT id FROM bookings WHERE status = 'confirmed'`,
+      sql`SELECT booking_ref, status, service_type FROM bookings ORDER BY created_at DESC LIMIT 5`,
+      sql`SELECT COUNT(*)::int AS total,
+                 COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
+                 COUNT(*) FILTER (WHERE status = 'cancelled')::int AS cancelled,
+                 COALESCE(SUM(paid_amount) FILTER (WHERE invoice_number IS NOT NULL AND COALESCE(payment_status, 'unpaid') <> 'paid'), 0) AS outstanding
+          FROM bookings`,
+      sql`SELECT (pickup_datetime AT TIME ZONE 'Africa/Dar_es_Salaam')::date::text AS d, COUNT(*)::int AS n
+          FROM bookings WHERE pickup_datetime >= NOW() - INTERVAL '8 days' GROUP BY 1`,
+    ]);
 
     const getDays = (date: string) => Math.ceil((new Date(date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 
@@ -135,6 +148,20 @@ export async function GET() {
       },
       expiringDocs,
       recentBookings,
+      fleet: {
+        total: vehicles.length,
+        maintenance: vehicles.filter((v: any) => v.status === "maintenance").length,
+        on_hire: vehicles.filter((v: any) => v.status !== "maintenance" && v.on_trip).length,
+        booked: vehicles.filter((v: any) => v.status !== "maintenance" && !v.on_trip && v.booked_ahead).length,
+        available: vehicles.filter((v: any) => v.status !== "maintenance" && !v.on_trip && !v.booked_ahead).length,
+      },
+      totals: {
+        bookings: totalsRows[0]?.total || 0,
+        completed: totalsRows[0]?.completed || 0,
+        cancelled: totalsRows[0]?.cancelled || 0,
+        outstanding: parseFloat(totalsRows[0]?.outstanding) || 0,
+      },
+      week: Object.fromEntries((weekRows as any[]).map(r => [r.d, r.n])),
     });
   } catch (err) {
     console.error(err);

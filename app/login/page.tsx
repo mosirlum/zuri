@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { signIn } from "next-auth/react";
 
 const AMBER = "#E08E0B";
@@ -104,20 +104,39 @@ function LoginScene() {
 }
 
 function LoginVideo() {
+  const ref = useRef<HTMLVideoElement>(null);
   const [ready, setReady] = useState(false);
-  const [off, setOff] = useState(false);
+  const [still, setStill] = useState(false);
+  const [failed, setFailed] = useState(false);
+
   useEffect(() => {
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) setOff(true);
+    // Someone who has turned animations off gets a still frame instead.
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) { setStill(true); return; }
+    const v = ref.current;
+    if (!v) return;
+    // On a fast connection the video can finish loading before React attaches
+    // its listeners, so check its state directly as well as listening.
+    const show = () => setReady(true);
+    if (v.readyState >= 2) show();
+    v.addEventListener("loadeddata", show);
+    v.addEventListener("canplay", show);
+    v.play().catch(() => { /* autoplay refused: the poster stays */ });
+    return () => { v.removeEventListener("loadeddata", show); v.removeEventListener("canplay", show); };
   }, []);
-  if (off) return null;
+
+  if (failed) return null;
+  if (still) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src="/videos/login-loop.jpg" alt="" className="absolute inset-0 h-full w-full object-cover" onError={() => setFailed(true)} />;
+  }
   return (
     <video
+      ref={ref}
       className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-1000 ${ready ? "opacity-100" : "opacity-0"}`}
       autoPlay muted loop playsInline preload="auto" poster="/videos/login-loop.jpg"
-      onCanPlay={() => setReady(true)} onError={() => setOff(true)}
     >
-      <source src="/videos/login-loop.webm" type="video/webm" onError={() => {}} />
-      <source src="/videos/login-loop.mp4" type="video/mp4" onError={() => setOff(true)} />
+      <source src="/videos/login-loop.webm" type="video/webm" />
+      <source src="/videos/login-loop.mp4" type="video/mp4" onError={() => setFailed(true)} />
     </video>
   );
 }

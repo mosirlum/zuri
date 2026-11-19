@@ -94,7 +94,37 @@ function Ed({ value, onChange, placeholder, block }: {
   );
 }
 
+// The bookings list no longer carries the saved document fields (they can be
+// large), so they are fetched here when the documents are opened.
 export default function BookingDocuments({ booking, onClose, onSaved }: {
+  booking: any;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [full, setFull] = useState<any>(booking.document_data !== undefined ? booking : null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (full) return;
+    fetch(`/api/admin/bookings/documents?id=${booking.id}`)
+      .then(r => (r.ok ? r.json() : Promise.reject()))
+      .then(d => setFull({ ...booking, document_data: d.document_data }))
+      .catch(() => setFailed(true));
+  }, [booking, full]);
+
+  if (!full) {
+    return (
+      <div className="fixed inset-0 z-50 bg-ink/60 flex items-center justify-center p-4" onClick={onClose}>
+        <div className="bg-paper rounded-2xl px-8 py-6 text-sm text-ink" onClick={e => e.stopPropagation()}>
+          {failed ? <>Could not open the documents. <button className="text-gold underline ml-1" onClick={onClose}>Close</button></> : "Opening documents..."}
+        </div>
+      </div>
+    );
+  }
+  return <BookingDocumentsSheet booking={full} onClose={onClose} onSaved={onSaved} />;
+}
+
+function BookingDocumentsSheet({ booking, onClose, onSaved }: {
   booking: any;
   onClose: () => void;
   onSaved: () => void;

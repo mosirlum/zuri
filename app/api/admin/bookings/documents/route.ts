@@ -7,6 +7,20 @@ const sql = neon(process.env.DATABASE_URL!);
 // The printed documents need details the operational booking doesn't carry —
 // order numbers, price structure, EFD receipt, line items. They're kept as one
 // JSON blob against the booking so both documents draw from the same source.
+export async function GET(req: NextRequest) {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const id = parseInt(new URL(req.url).searchParams.get("id") || "");
+  if (!Number.isInteger(id) || id <= 0) return NextResponse.json({ error: "Missing booking id" }, { status: 400 });
+  try {
+    const rows = await sql`SELECT document_data FROM bookings WHERE id = ${id}`;
+    return NextResponse.json({ document_data: rows[0]?.document_data || null });
+  } catch (err) {
+    console.error(err);
+    return NextResponse.json({ error: "Database error" }, { status: 500 });
+  }
+}
+
 export async function PUT(req: NextRequest) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
