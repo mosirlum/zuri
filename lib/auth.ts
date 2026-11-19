@@ -11,6 +11,11 @@ const MAX_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 15;
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  // Auth.js only trusts the incoming host automatically on Vercel. Running the
+  // production build anywhere else (npm start on a laptop, another host) fails
+  // with "UntrustedHost" unless this is set. The app is only ever served from
+  // its own domain or localhost, so trusting the host header is safe here.
+  trustHost: true,
   providers: [
     Credentials({
       name: "credentials",
