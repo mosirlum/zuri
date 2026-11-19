@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { signIn } from "next-auth/react";
 
 const AMBER = "#E08E0B";
@@ -94,8 +94,31 @@ function LoginScene() {
           </g>
         </g>
       </svg>
+      {/* A real video, when one is added at public/videos/login-loop.mp4, fades
+          in over the drawn scene. If the file is missing, fails to load, or
+          the person has asked for reduced motion, the drawn scene stays. */}
+      <LoginVideo />
       <div className="absolute inset-0 bg-gradient-to-t from-[#120d08]/40 via-transparent to-[#120d08]/20" />
     </div>
+  );
+}
+
+function LoginVideo() {
+  const [ready, setReady] = useState(false);
+  const [off, setOff] = useState(false);
+  useEffect(() => {
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) setOff(true);
+  }, []);
+  if (off) return null;
+  return (
+    <video
+      className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-1000 ${ready ? "opacity-100" : "opacity-0"}`}
+      autoPlay muted loop playsInline preload="auto" poster="/videos/login-loop.jpg"
+      onCanPlay={() => setReady(true)} onError={() => setOff(true)}
+    >
+      <source src="/videos/login-loop.webm" type="video/webm" onError={() => {}} />
+      <source src="/videos/login-loop.mp4" type="video/mp4" onError={() => setOff(true)} />
+    </video>
   );
 }
 
