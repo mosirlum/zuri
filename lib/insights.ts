@@ -21,7 +21,7 @@ export type Seg = { t: string; k?: "g" | "r" | "a" | "b" };
 export type Finding = {
   id: string; severity: "critical" | "warning" | "info" | "good"; title: string; what: string; why: string;
   actions: string[]; impact: number | null; evidence: { label: string; value: string }[];
-  items?: { label: string; value: string }[]; fixFirst?: boolean;
+  items?: { label: string; value: string; href?: string }[]; fixFirst?: boolean;
 };
 const p0label = (y: number, m: number) => MONTHS[new Date(Date.UTC(y, m, 1)).getUTCMonth()];
 export type AttentionItem = {
@@ -95,7 +95,7 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
       attention.push({
         id: `vd-${v.id}-${label}`, tone: left <= 7 ? "bad" : "warn",
         title: left <= 0 ? `${v.make} ${v.model} ${label.toLowerCase()} has expired` : `${v.make} ${v.model} ${label.toLowerCase()} expires in ${left} day${left === 1 ? "" : "s"}`,
-        detail: v.plate_number || "Vehicle", href: "/admin/compliance", cta: "Open compliance",
+        detail: v.plate_number || "Vehicle", href: `/admin/fleet?vehicle=${v.id}`, cta: "Open vehicle",
       });
     }
     if (v.next_service_date) {
@@ -103,7 +103,7 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
       if (left <= 10) attention.push({
         id: `sv-${v.id}`, tone: left <= 0 ? "bad" : "info",
         title: left <= 0 ? `${v.make} ${v.model} service is overdue` : `${v.make} ${v.model} service due in ${left} day${left === 1 ? "" : "s"}`,
-        detail: v.plate_number || "Vehicle", href: "/admin/fleet", cta: "Open fleet",
+        detail: v.plate_number || "Vehicle", href: `/admin/fleet?vehicle=${v.id}`, cta: "Open vehicle",
       });
     }
   }
@@ -115,7 +115,7 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
       attention.push({
         id: `dd-${d.id}-${label}`, tone: left <= 7 ? "bad" : "warn",
         title: left <= 0 ? `${d.full_name}: ${label.toLowerCase()} has expired` : `${d.full_name}: ${label.toLowerCase()} expires in ${left} day${left === 1 ? "" : "s"}`,
-        detail: "Driver", href: "/admin/compliance", cta: "Open compliance",
+        detail: "Driver", href: `/admin/drivers?driver=${d.id}`, cta: "Open driver",
       });
     }
   }
@@ -125,7 +125,7 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
       attention.push({
         id: `nd-${b.id}`, tone: hrs <= 24 ? "bad" : "warn",
         title: `${b.booking_ref} starts in ${hrs < 24 ? `${hrs}h` : `${Math.round(hrs / 24)} day${Math.round(hrs / 24) === 1 ? "" : "s"}`} with ${b.cars === 0 ? "no vehicle" : "no driver"} assigned`,
-        detail: b.customer || "Booking", href: "/admin/bookings", cta: "Open booking",
+        detail: b.customer || "Booking", href: `/admin/bookings?open=${b.id}&do=edit`, cta: b.cars === 0 ? "Assign vehicle" : "Assign driver",
       });
     }
   }
@@ -136,7 +136,7 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
         id: `ne-${b.id}`, tone: ago >= 7 ? "bad" : "warn", money: true,
         title: `${b.booking_ref} ended ${ago} day${ago === 1 ? "" : "s"} ago and is not invoiced`,
         detail: `${b.customer || "Customer"}${num(b.quoted_amount) ? ` · ${tzs(num(b.quoted_amount))}` : ""}`,
-        href: "/admin/bookings", cta: "Create invoice",
+        href: `/admin/bookings?open=${b.id}&do=invoice`, cta: "Create invoice",
       });
     }
   }
@@ -271,7 +271,7 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
     attention.push({
       id: `ar-${r.id}`, tone: r.age >= 14 ? "bad" : "warn", money: true,
       title: `${r.ref} unpaid ${r.age} days`, detail: `${r.customer || "Customer"} · ${r.invoice || "Invoice"} · ${tzs(r.amount)}`,
-      href: "/admin/bookings", cta: "Record payment",
+      href: `/admin/bookings?open=${r.id}&do=pay`, cta: "Record payment",
     });
   }
 
@@ -386,7 +386,7 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
       why: "Money owed is not money you can use. The older an invoice gets, the less likely it is paid in full, and unpaid jobs still cost you fuel, allowances and wages.",
       actions: ["Call the three oldest customers today and agree a payment date.", "Ask for a deposit on new jobs from customers who pay late.", "Record each payment the day it arrives so this list stays honest."],
       impact: receivables.b2 > 0 ? receivables.b2 : receivables.b1,
-      items: recvItems.slice(0, 8).map(r => ({ label: `${r.customer || "Customer"} · ${r.invoice || r.ref}`, value: `${tzs(r.amount)} · ${r.age} days` })),
+      items: recvItems.slice(0, 8).map(r => ({ label: `${r.customer || "Customer"} · ${r.invoice || r.ref}`, value: `${tzs(r.amount)} · ${r.age} days`, href: `/admin/bookings?open=${r.id}&do=docs` })),
       evidence: [ev("Unpaid", tzs(receivables.total)), ev("Over 30 days", tzs(receivables.b2)), ev("8 to 30 days", tzs(receivables.b1))],
     });
   }
@@ -398,7 +398,7 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
       why: "The payment clock only starts when the invoice goes out. Every day of delay is a day later that cash arrives.",
       actions: ["Record the invoice for each finished job today.", "Make invoicing part of closing a job, not a separate chore."],
       impact: endedTotal > 0 ? endedTotal : null,
-      items: (attnEnded as any[]).slice(0, 8).map(b => ({ label: `${b.booking_ref} · ${b.customer || "Customer"}`, value: num(b.quoted_amount) ? tzs(num(b.quoted_amount)) : "no quote" })),
+      items: (attnEnded as any[]).slice(0, 8).map(b => ({ label: `${b.booking_ref} · ${b.customer || "Customer"}`, value: num(b.quoted_amount) ? tzs(num(b.quoted_amount)) : "no quote", href: `/admin/bookings?open=${b.id}&do=invoice` })),
       evidence: [ev("Jobs waiting", String(endedCount)), ev("Quoted value", endedTotal > 0 ? tzs(endedTotal) : "not quoted")],
     });
   }
@@ -413,7 +413,7 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
       why: "A car that works a lot but keeps little is the easiest to fix: the price, not the work, is the problem.",
       actions: [`Quote about TZS ${Math.round(x.sug).toLocaleString("en-US")} a day for it instead of ${Math.round(x.cur).toLocaleString("en-US")}.`, "Check its fuel and allowance lines for anything unusual."],
       impact: x.gain,
-      items: [{ label: `${x.v.name} ${x.v.plate}`, value: `TZS ${Math.round(x.cur).toLocaleString("en-US")} → TZS ${Math.round(x.sug).toLocaleString("en-US")} a day` }],
+      items: [{ label: `${x.v.name} ${x.v.plate}`, value: `TZS ${Math.round(x.cur).toLocaleString("en-US")} → TZS ${Math.round(x.sug).toLocaleString("en-US")} a day`, href: `/admin/fleet?vehicle=${x.v.id}` }],
       evidence: [ev("Days worked", `${x.v.days} of ${elapsed}`), ev("Earned per day", tzs(x.cur)), ev("Needed per day", tzs(x.sug))],
     });
   }
@@ -429,7 +429,7 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
       why: "A car that is not working still carries insurance, licences and depreciation. Every idle day is revenue that never arrives.",
       actions: ["Offer idle cars to regular customers such as schools, hotels and companies for weekday transfers.", "Check whether a document or repair is keeping a car off the road."],
       impact: Math.round(idleDays * perDay * 0.3),
-      items: idleCars.map(v => ({ label: `${v.name} ${v.plate}`, value: `worked ${v.days} of ${elapsed} days` })),
+      items: idleCars.map(v => ({ label: `${v.name} ${v.plate}`, value: `worked ${v.days} of ${elapsed} days`, href: `/admin/fleet?vehicle=${v.id}` })),
       evidence: [ev("Idle car-days", String(idleDays)), ev("Average earned per working day", tzs(perDay)), ev("Estimate assumes", "30% of idle days filled")],
     });
   }
@@ -476,7 +476,7 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
   findings.filter(f => f.severity !== "good" && (f.impact || 0) > 0).sort((a, b) => (b.impact || 0) - (a.impact || 0)).slice(0, 3).forEach(f => { f.fixFirst = true; });
   const priceFixes = vehicles.filter(v => v.days > 0 && v.revenue > 0 && (v.margin ?? 100) < T).map(v => {
     const perDay = v.revenue / v.days, costDay = v.cost / v.days, sug = costDay / (1 - T / 100);
-    return { name: v.name, plate: v.plate, perDay, costDay, margin: v.margin, suggested: sug, extra: Math.max(0, sug - perDay) * v.days };
+    return { id: v.id, name: v.name, plate: v.plate, perDay, costDay, margin: v.margin, suggested: sug, extra: Math.max(0, sug - perDay) * v.days };
   }).sort((a, b) => b.extra - a.extra);
   const dailySeries = Array.from({ length: elapsed }, (_, i) => {
     const k = iso(new Date(Date.UTC(y, m, i + 1)));

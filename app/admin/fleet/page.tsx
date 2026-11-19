@@ -468,6 +468,19 @@ export default function FleetPage() {
 
   useEffect(() => { fetchVehicles(); }, [fetchVehicles]);
 
+  // /admin/fleet?vehicle=<id> scrolls to that car and highlights it.
+  const [focusId, setFocusId] = useState<number | null>(null);
+  useEffect(() => {
+    if (loading) return;
+    const id = parseInt(new URLSearchParams(window.location.search).get("vehicle") || "");
+    if (!id) return;
+    setFilter("all");
+    setFocusId(id);
+    window.history.replaceState(null, "", "/admin/fleet");
+    setTimeout(() => document.getElementById(`vehicle-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 150);
+    setTimeout(() => setFocusId(null), 3500);
+  }, [loading]);
+
   const handleEdit = useCallback((v: Vehicle) => {
     setEditVehicle(v);
     setShowForm(true);
@@ -536,7 +549,7 @@ export default function FleetPage() {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5 z-stagger">
           {filtered.map(vehicle => (
-            <VehicleCard key={vehicle.id} vehicle={vehicle} getDaysUntil={getDaysUntil} onEdit={handleEdit} onDelete={handleDelete} onPhoto={handlePhoto} />
+            <div key={vehicle.id} id={`vehicle-${vehicle.id}`} className={`rounded-2xl transition-shadow duration-500 ${focusId === vehicle.id ? "ring-4 ring-gold ring-offset-4 ring-offset-paper-soft" : ""}`}><VehicleCard vehicle={vehicle} getDaysUntil={getDaysUntil} onEdit={handleEdit} onDelete={handleDelete} onPhoto={handlePhoto} /></div>
           ))}
         </div>
       )}

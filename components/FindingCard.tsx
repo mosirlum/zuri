@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { AlertOctagon, AlertTriangle, Info, CheckCircle2, ChevronDown } from "lucide-react";
+import Link from "next/link";
+import { AlertOctagon, AlertTriangle, Info, CheckCircle2, ChevronDown, ArrowUpRight } from "lucide-react";
 import { short } from "@/lib/money-rules";
 
 const look: Record<string, { bar: string; chip: string; label: string; Icon: any; tint: string }> = {
@@ -14,7 +15,7 @@ const look: Record<string, { bar: string; chip: string; label: string; Icon: any
 export type FindingData = {
   id: string; severity: "critical" | "warning" | "info" | "good"; title: string; what: string; why: string;
   actions: string[]; impact: number | null; evidence: { label: string; value: string }[];
-  items?: { label: string; value: string }[]; fixFirst?: boolean;
+  items?: { label: string; value: string; href?: string }[]; fixFirst?: boolean;
 };
 
 // One thing the system noticed, written the way an adviser would say it:
@@ -57,8 +58,17 @@ export default function FindingCard({ f, defaultOpen = false }: { f: FindingData
             {f.items && f.items.length > 0 && (
               <ul className="rounded-xl border border-ink/10 divide-y divide-ink/5">
                 {f.items.map((it, i) => (
-                  <li key={i} className="flex flex-wrap justify-between gap-x-4 gap-y-0.5 px-3 py-2">
-                    <span className="text-ink font-medium">{it.label}</span><span className="text-ink-soft tabular-nums">{it.value}</span>
+                  <li key={i}>
+                    {it.href ? (
+                      <Link href={it.href} className="group flex flex-wrap items-center justify-between gap-x-4 gap-y-0.5 px-3 py-2.5 hover:bg-gold/10 transition-colors">
+                        <span className="text-ink font-medium underline decoration-gold/40 underline-offset-4 group-hover:decoration-gold">{it.label}</span>
+                        <span className="inline-flex items-center gap-1.5 text-ink-soft tabular-nums">{it.value}<ArrowUpRight className="w-4 h-4 text-gold opacity-60 group-hover:opacity-100" /></span>
+                      </Link>
+                    ) : (
+                      <div className="flex flex-wrap justify-between gap-x-4 gap-y-0.5 px-3 py-2">
+                        <span className="text-ink font-medium">{it.label}</span><span className="text-ink-soft tabular-nums">{it.value}</span>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>

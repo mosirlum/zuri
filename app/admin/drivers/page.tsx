@@ -354,6 +354,19 @@ export default function DriversPage() {
 
   useEffect(() => { fetchDrivers(); }, [fetchDrivers]);
 
+  // /admin/drivers?driver=<id> scrolls to that driver and highlights them.
+  const [focusId, setFocusId] = useState<number | null>(null);
+  useEffect(() => {
+    if (loading) return;
+    const id = parseInt(new URLSearchParams(window.location.search).get("driver") || "");
+    if (!id) return;
+    setFilter("all");
+    setFocusId(id);
+    window.history.replaceState(null, "", "/admin/drivers");
+    setTimeout(() => document.getElementById(`driver-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 150);
+    setTimeout(() => setFocusId(null), 3500);
+  }, [loading]);
+
   const handleEdit = useCallback((d: Driver) => {
     setEditDriver(d);
     setShowForm(true);
@@ -405,8 +418,10 @@ export default function DriversPage() {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
           {filtered.map(driver => (
-            <DriverCard key={driver.id} driver={driver} getDaysUntil={getDaysUntil}
-              onEdit={handleEdit} onDelete={setDeleteDriver} />
+            <div key={driver.id} id={`driver-${driver.id}`} className={`rounded-2xl transition-shadow duration-500 ${focusId === driver.id ? "ring-4 ring-gold ring-offset-4 ring-offset-paper-soft" : ""}`}>
+              <DriverCard driver={driver} getDaysUntil={getDaysUntil}
+                onEdit={handleEdit} onDelete={setDeleteDriver} />
+            </div>
           ))}
         </div>
       )}

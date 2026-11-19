@@ -230,7 +230,7 @@ export default function BusinessGrowthPage() {
             {m.vehicles.map((v: any) => (
               <div key={v.id}>
                 <div className="flex flex-wrap justify-between gap-x-4 text-sm">
-                  <span><b>{v.name}</b> <span className="text-muted">{v.plate}</span></span>
+                  <Link href={`/admin/fleet?vehicle=${v.id}`} className="hover:text-gold"><b className="underline decoration-gold/40 underline-offset-4">{v.name}</b> <span className="text-muted">{v.plate}</span></Link>
                   <span className="text-muted"><b className="text-ink">{v.profit < 0 ? "-" : ""}{full(Math.abs(v.profit))}</b>{v.margin !== null ? ` · ${Math.round(v.margin)}% margin` : ""} · worked {v.days} of {d.period.elapsed} days</span>
                 </div>
                 <div className="h-2 rounded-full bg-ink/5 mt-1.5 overflow-hidden">

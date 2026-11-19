@@ -990,6 +990,27 @@ export default function BookingsPage() {
 
   useEffect(() => { fetchBookings(); }, [fetchBookings]);
 
+  // Links from the dashboard, Business Growth and the Profit Doctor report
+  // arrive as /admin/bookings?open=<id>&do=view|edit|docs|invoice|pay and
+  // open that booking straight away, then tidy the address bar.
+  const [linked, setLinked] = useState(false);
+  useEffect(() => {
+    if (linked || loading) return;
+    const sp = new URLSearchParams(window.location.search);
+    const id = parseInt(sp.get("open") || "");
+    if (!id) return;
+    setLinked(true);
+    const b = bookings.find((x: any) => x.id === id);
+    window.history.replaceState(null, "", "/admin/bookings");
+    if (!b) return;
+    const what = sp.get("do") || "view";
+    if (what === "edit") setEditBooking(b);
+    else if (what === "docs") setDocsBooking(b);
+    else if (what === "invoice") setInvoiceBooking(b);
+    else if (what === "pay") setPaymentBooking(b);
+    else setViewBooking(b);
+  }, [bookings, loading, linked]);
+
   const deleteBooking = async (id: number, ref: string) => {
     if (!confirm(`Delete ${ref}? Linked expenses go too. This cannot be undone.`)) return;
     await fetch("/api/admin/bookings/delete", {

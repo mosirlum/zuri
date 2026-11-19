@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Printer, Stethoscope, TrendingUp, TrendingDown, Lightbulb, AlertTriangle, Info, ChevronLeft, ChevronRight } from "lucide-react";
 import FindingCard from "@/components/FindingCard";
 import { full, short } from "@/lib/money-rules";
@@ -216,7 +217,7 @@ ${m.doctor.totalImpact > 0 ? `<p><b>Money you can win back: about TZS ${full(m.d
               <tbody>
                 {m.priceFixes.map((p: any) => (
                   <tr key={p.name + p.plate} className="border-t border-ink/10">
-                    <td className="py-3"><b>{p.name}</b> <span className="text-muted text-sm">{p.plate}</span></td>
+                    <td className="py-3"><Link href={`/admin/fleet?vehicle=${p.id}`} className="hover:text-gold"><b className="underline decoration-gold/40 underline-offset-4">{p.name}</b> <span className="text-muted text-sm">{p.plate}</span></Link></td>
                     <td className="py-3 text-right tabular-nums">{TZS(p.perDay)}</td>
                     <td className="py-3 text-right tabular-nums">{TZS(p.costDay)}</td>
                     <td className="py-3 text-right"><span className="rounded-full bg-red-100 text-red-800 px-2 py-0.5 text-sm font-semibold">{Math.round(p.margin)}%</span></td>
@@ -279,11 +280,11 @@ ${m.doctor.totalImpact > 0 ? `<p><b>Money you can win back: about TZS ${full(m.d
       <Card title="Top 5 vehicles" sub="By what each car earned this period">
         <ol className="space-y-3">
           {[...m.vehicles].sort((x: any, y: any) => y.revenue - x.revenue).filter((v: any) => v.revenue > 0).slice(0, 5).map((v: any, i: number) => (
-            <li key={v.id} className="flex items-center gap-4 rounded-2xl bg-paper-soft px-4 py-3">
+            <li key={v.id}><Link href={`/admin/fleet?vehicle=${v.id}`} className="flex items-center gap-4 rounded-2xl bg-paper-soft px-4 py-3 hover:bg-gold/10 transition-colors">
               <span className="w-8 h-8 rounded-full bg-ink text-paper grid place-items-center font-semibold">{i + 1}</span>
               <div className="flex-1 min-w-0"><div className="font-medium text-ink truncate">{v.name} <span className="text-muted text-sm">{v.plate}</span></div><div className="text-sm text-muted">worked {v.days} day{v.days === 1 ? "" : "s"} · {v.margin !== null ? `${Math.round(v.margin)}% margin` : "no revenue"}</div></div>
               <b className="tabular-nums">{TZS(v.revenue)}</b>
-            </li>
+            </Link></li>
           ))}
           {m.vehicles.every((v: any) => v.revenue <= 0) && <p className="text-muted">No vehicle earned yet in this period.</p>}
         </ol>
@@ -296,7 +297,7 @@ ${m.doctor.totalImpact > 0 ? `<p><b>Money you can win back: about TZS ${full(m.d
             <tbody>
               {shown.map((j: any) => (
                 <tr key={j.id} className="border-t border-ink/10">
-                  <td className="py-3 font-mono text-sm">{j.ref}</td>
+                  <td className="py-3 font-mono text-sm"><Link href={`/admin/bookings?open=${j.id}&do=${j.state === "Not invoiced" || j.state === "Cancelled" ? "view" : "docs"}`} className="text-gold-deep underline underline-offset-4 hover:text-gold">{j.ref}</Link></td>
                   <td className="py-3">{j.date ? new Date(j.date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "-"}</td>
                   <td className="py-3">{j.customer || "-"}</td>
                   <td className="py-3">{j.service}</td>
