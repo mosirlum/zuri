@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Printer, Sparkles } from "lucide-react";
+import FindingCard from "@/components/FindingCard";
 
 type Seg = { t: string; k?: "g" | "r" | "a" | "b" };
 
@@ -40,7 +41,7 @@ export default function WrittenAnalysis({ year, month }: { year: number; month: 
     const w = window.open("", "_blank");
     if (!w) return;
     const body = a.paragraphs.map((p: Seg[]) => `<p>${p.map(s => (s.k ? `<b>${esc(s.t)}</b>` : esc(s.t))).join("")}</p>`).join("");
-    const todo = a.actions.length ? `<h2>What to do</h2><ol>${a.actions.map((x: string) => `<li>${esc(x)}</li>`).join("")}</ol>` : "";
+    const todo = a.actions.length ? `<h2>What to do first</h2><ol>${a.actions.map((x: string) => `<li>${esc(x)}</li>`).join("")}</ol>` : "";
     w.document.write(`<!doctype html><title>Zuri analysis ${esc(data.period.label)}</title>
 <style>body{font:15px/1.7 Georgia,serif;max-width:680px;margin:40px auto;padding:0 20px;color:#1c1814}h1{font-size:28px;margin:0}small{color:#7a6f60}h2{font-size:16px;margin-top:28px;letter-spacing:.1em;text-transform:uppercase}li{margin:6px 0}</style>
 <h1>Zuri Tours &amp; Car Hire</h1><small>Business analysis · ${esc(data.period.label)}${data.period.isCurrent ? " (to date)" : ""}</small><div style="margin-top:22px">${body}</div>${todo}`);
@@ -53,7 +54,7 @@ export default function WrittenAnalysis({ year, month }: { year: number; month: 
     <section className="rounded-2xl border border-ink/10 bg-paper overflow-hidden">
       <div className="px-6 py-4 border-b border-ink/10 flex items-center justify-between gap-3">
         <h2 className="font-display text-xl font-medium flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-gold" /> Analysis: {data.period.label}{data.period.isCurrent ? " so far" : ""}
+          <Sparkles className="w-4 h-4 text-gold" /> Business analysis: {data.period.label}{data.period.isCurrent ? " so far" : ""}
         </h2>
         <button onClick={print} className="inline-flex items-center gap-2 text-xs px-3 py-2 rounded-lg border border-ink/15 hover:border-gold hover:text-gold transition-colors">
           <Printer className="w-3.5 h-3.5" /> Print / Save PDF
@@ -69,7 +70,7 @@ export default function WrittenAnalysis({ year, month }: { year: number; month: 
         ))}
         {a.actions.length > 0 && (
           <div className="mt-5">
-            <div className="text-xs tracking-widest uppercase text-muted mb-2">What to do</div>
+            <div className="text-xs tracking-widest uppercase text-muted mb-2">What to do first</div>
             <ol className="space-y-2">
               {a.actions.map((x: string, i: number) => (
                 <li key={i} className="flex gap-3 text-sm text-ink-soft">
@@ -81,6 +82,14 @@ export default function WrittenAnalysis({ year, month }: { year: number; month: 
           </div>
         )}
       </div>
+      {data.money?.doctor?.findings?.length > 0 && (
+        <div className="border-t border-ink/10 px-6 py-5 bg-paper-soft/60">
+          <div className="text-xs tracking-widest uppercase text-muted mb-3">Profit doctor: the detail behind each point</div>
+          <div className="space-y-3">
+            {data.money.doctor.findings.map((f: any) => <FindingCard key={f.id} f={f} />)}
+          </div>
+        </div>
+      )}
     </section>
   );
 }

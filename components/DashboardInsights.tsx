@@ -65,7 +65,8 @@ export default function DashboardInsights({ isBoss }: { isBoss: boolean }) {
               ) : <span className="text-muted">No earlier month to compare yet</span>}
               {m.forecast && <span className="text-muted">Pace: closes near <b className="text-ink">TZS {short(m.forecast.net)}</b></span>}
             </div>
-            <div className="grid grid-cols-3 gap-4 mt-6">
+            <Link href="/admin/growth" className="inline-flex items-center gap-1 text-xs font-medium text-gold hover:underline mt-3">Open Business Growth <ArrowRight className="w-3 h-3" /></Link>
+            <div className="grid grid-cols-3 gap-4 mt-5">
               {[["Revenue", m.revenue], ["Trip costs", m.vehicleCosts], ["Company costs", m.companyCosts]].map(([l, v]) => (
                 <div key={l as string}>
                   <div className="text-[0.65rem] tracking-widest uppercase text-muted">{l as string}</div>

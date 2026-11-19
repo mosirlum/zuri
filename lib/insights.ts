@@ -18,6 +18,11 @@ const ymOf = (y: number, m: number) => { const d = new Date(Date.UTC(y, m, 1)); 
 const labelOf = (y: number, m: number) => { const d = new Date(Date.UTC(y, m, 1)); return `${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`; };
 
 export type Seg = { t: string; k?: "g" | "r" | "a" | "b" };
+export type Finding = {
+  id: string; severity: "critical" | "warning" | "info" | "good"; title: string; what: string; why: string;
+  actions: string[]; impact: number | null; evidence: { label: string; value: string }[];
+};
+const p0label = (y: number, m: number) => MONTHS[new Date(Date.UTC(y, m, 1)).getUTCMonth()];
 export type AttentionItem = {
   id: string; tone: "bad" | "warn" | "info"; title: string; detail: string; href: string; cta: string; money?: boolean;
 };
@@ -142,12 +147,12 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
   }
 
   // ── money (boss only) ───────────────────────────────────────────────────
-  const [revHist, expHist, prevRev, prevExp, daily, recv, bvRows, custRows] = await Promise.all([
+  const [revHist, expHist, prevRev, prevExp, daily, recv, bvRows, custRows, svcRows] = await Promise.all([
     sql`SELECT to_char(pickup_datetime::date, 'YYYY-MM') AS ym, COALESCE(SUM(paid_amount), 0) AS revenue, COUNT(*)::int AS jobs
         FROM bookings WHERE pickup_datetime::date BETWEEN ${hist0}::date AND ${endISO}::date GROUP BY 1`,
     sql`SELECT to_char(expense_date, 'YYYY-MM') AS ym, expense_type, category, COALESCE(SUM(amount), 0) AS amount
         FROM expenses WHERE expense_date BETWEEN ${hist0}::date AND ${endISO}::date GROUP BY 1, 2, 3`,
-    sql`SELECT COALESCE(SUM(paid_amount), 0) AS revenue FROM bookings WHERE pickup_datetime::date BETWEEN ${prevStart}::date AND ${prevEnd}::date`,
+    sql`SELECT COALESCE(SUM(paid_amount), 0) AS revenue, COUNT(*)::int AS jobs FROM bookings WHERE pickup_datetime::date BETWEEN ${prevStart}::date AND ${prevEnd}::date`,
     sql`SELECT expense_type, category, COALESCE(SUM(amount), 0) AS amount FROM expenses
         WHERE expense_date BETWEEN ${prevStart}::date AND ${prevEnd}::date GROUP BY 1, 2`,
     sql`SELECT pickup_datetime::date::text AS d, COALESCE(SUM(paid_amount), 0) AS rev FROM bookings
@@ -166,6 +171,8 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
         FROM bookings b LEFT JOIN customers c ON c.id = b.customer_id
         WHERE b.customer_id IS NOT NULL AND b.pickup_datetime::date BETWEEN ${startISO}::date AND ${endISO}::date
         GROUP BY b.customer_id, c.full_name`,
+    sql`SELECT COALESCE(service_type, 'other') AS service, COALESCE(SUM(paid_amount), 0) AS rev, COUNT(*)::int AS jobs
+        FROM bookings WHERE pickup_datetime::date BETWEEN ${startISO}::date AND ${endISO}::date GROUP BY 1 ORDER BY rev DESC`,
   ]);
 
   // Six-month history, oldest first.
@@ -298,6 +305,173 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
   const topCostEntry = Object.entries(catTotals).sort((a, b) => b[1] - a[1])[0];
   const topCost = topCostEntry ? { category: topCostEntry[0].replace(/_/g, " "), amount: topCostEntry[1] } : null;
 
+  // ── Profit doctor: what is wrong, why it matters, what to do, what it is worth ──
+  const pretty = (s: string) => s.replace(/_/g, " ").replace(/^./, c => c.toUpperCase());
+  const services = (svcRows as any[]).map(s => ({ name: pretty(s.service), revenue: num(s.rev), jobs: s.jobs as number, share: cur.revenue > 0 ? Math.round((num(s.rev) / cur.revenue) * 100) : 0 }));
+  const prevCat: Record<string, number> = {};
+  for (const r of prevExp as any[]) { const k = r.category || "other"; prevCat[k] = (prevCat[k] || 0) + num(r.amount); }
+  const costMoves = Object.entries(catTotals).map(([k, v]) => ({ key: k, name: pretty(k), now: v, before: prevCat[k] || 0 }))
+    .sort((a, b) => b.now - a.now);
+  const endedTotal = (attnEnded as any[]).reduce((s, b) => s + num(b.quoted_amount), 0);
+  const endedCount = (attnEnded as any[]).length;
+  const T = target;
+  const rev = cur.revenue;
+  const findings: Finding[] = [];
+  const ev = (label: string, value: string) => ({ label, value });
+
+  if (rev > 0 && margin < T) {
+    const gap = T - margin;
+    findings.push({
+      id: "margin", severity: cur.net < 0 || margin < T / 2 ? "critical" : "warning",
+      title: `You keep ${Math.round(margin)}% of each sale; your target is ${T}%`,
+      what: `Of every TZS 100 you earn, about TZS ${Math.round((cur.vehicleCosts / rev) * 100)} goes on trip costs, TZS ${Math.round((cur.companyCosts / rev) * 100)} on company costs, and TZS ${Math.round(margin)} is left as profit.`,
+      why: `Each margin point is worth ${tzs(rev / 100)} on this month's revenue. Closing the ${Math.round(gap)}-point gap is worth about ${tzs((rev * gap) / 100)}.`,
+      actions: ["Fix the prices of the cars listed under the price fixes below first.", "Look at the biggest cost lines below and ask what can be cut or negotiated.", "Quote new jobs from the cost per day, not from habit."],
+      impact: (rev * gap) / 100,
+      evidence: [ev("Margin now", `${Math.round(margin)}%`), ev("Target", `${T}%`), ev("Worth per 1 point", tzs(rev / 100))],
+    });
+  }
+  if (rev > 0 && cur.vehicleCosts / rev > 0.45) {
+    const top = costMoves.filter(c => isVehicleCost({ category: c.key }))[0];
+    findings.push({
+      id: "tripcost", severity: "warning",
+      title: `Trip costs take ${Math.round((cur.vehicleCosts / rev) * 100)}% of revenue`,
+      what: `Fuel, driver allowances and the other costs of running trips come to ${tzs(cur.vehicleCosts)} against ${tzs(rev)} earned.${top ? ` The biggest line is ${top.name.toLowerCase()} at ${tzs(top.now)}.` : ""}`,
+      why: "Trip costs move with every job, so they are the cheapest place to find money when margin is thin.",
+      actions: ["Compare fuel used per kilometre between cars and look for the outlier.", "Set a standard allowance per day for each type of trip.", "Make sure the client is billed for fuel and allowances where the quote allows it."],
+      impact: cur.vehicleCosts - rev * 0.4,
+      evidence: [ev("Trip costs", tzs(cur.vehicleCosts)), ev("Share of revenue", `${Math.round((cur.vehicleCosts / rev) * 100)}%`), ev("Healthy range", "under 40%")],
+    });
+  }
+  if (rev > 0 && cur.companyCosts / rev > 0.3 && (!isCurrent || elapsed >= days * 0.6)) {
+    findings.push({
+      id: "overheads", severity: "warning",
+      title: `Company costs are ${Math.round((cur.companyCosts / rev) * 100)}% of revenue`,
+      what: `Rent, salaries, licences and other overheads came to ${tzs(cur.companyCosts)}. They are paid whether or not the cars are out.`,
+      why: "Overheads are fixed, so the way to shrink their share is more jobs on the same cars, not cutting what keeps the business running.",
+      actions: ["Fill the idle days (see below) before touching overheads.", "Check periodic costs such as insurance and licences are not being counted twice."],
+      impact: cur.companyCosts - rev * 0.25,
+      evidence: [ev("Company costs", tzs(cur.companyCosts)), ev("Share of revenue", `${Math.round((cur.companyCosts / rev) * 100)}%`)],
+    });
+  }
+  for (const c of costMoves.filter(c => c.before > 0 && c.now > c.before * 1.3 && c.now - c.before >= Math.max(200000, rev * 0.03)).slice(0, 2)) {
+    findings.push({
+      id: `cost-${c.key}`, severity: "warning",
+      title: `${c.name} is up ${Math.round(((c.now - c.before) / c.before) * 100)}% on ${isCurrent ? "the same days in " : ""}${prevLabel}`,
+      what: `You have spent ${tzs(c.now)} on ${c.name.toLowerCase()} against ${tzs(c.before)} ${isCurrent ? "in the same days" : "in"} ${prevLabel}.`,
+      why: "A cost that jumps without more work behind it is usually a price change, a leak or a one-off. Each is worth knowing about now.",
+      actions: [`Open the ${c.name.toLowerCase()} entries and check each one is real and was billed at the right price.`, "If it is a one-off, note it so it is not mistaken for the new normal."],
+      impact: c.now - c.before,
+      evidence: [ev("This month", tzs(c.now)), ev(prevLabel, tzs(c.before))],
+    });
+  }
+  if (receivables.b2 > 0 || (receivables.total > 0 && receivables.total > rev * 0.5)) {
+    const worst = recvItems.slice(0, 3).map(r => `${r.customer || r.ref} (${short(r.amount)}, ${r.age} days)`).join(", ");
+    findings.push({
+      id: "receivables", severity: receivables.b2 > 0 ? "critical" : "warning",
+      title: `${tzs(receivables.total)} is waiting to be paid`,
+      what: `${receivables.count} invoice${receivables.count === 1 ? "" : "s"} unpaid${receivables.b2 > 0 ? `, ${tzs(receivables.b2)} of it older than 30 days` : ""}. Oldest: ${worst}.`,
+      why: "Money owed is not money you can use. The older an invoice gets, the less likely it is paid in full, and unpaid jobs still cost you fuel, allowances and wages.",
+      actions: ["Call the three oldest customers today and agree a payment date.", "Ask for a deposit on new jobs from customers who pay late.", "Record each payment the day it arrives so this list stays honest."],
+      impact: receivables.b2 > 0 ? receivables.b2 : receivables.b1,
+      evidence: [ev("Unpaid", tzs(receivables.total)), ev("Over 30 days", tzs(receivables.b2)), ev("8 to 30 days", tzs(receivables.b1))],
+    });
+  }
+  if (endedCount > 0) {
+    findings.push({
+      id: "uninvoiced", severity: "warning",
+      title: `${endedCount} finished job${endedCount === 1 ? " has" : "s have"} not been invoiced`,
+      what: `${endedCount === 1 ? "A job has" : `${endedCount} jobs have`} ended with no invoice recorded${endedTotal > 0 ? `, together quoted at ${tzs(endedTotal)}` : ""}.`,
+      why: "The payment clock only starts when the invoice goes out. Every day of delay is a day later that cash arrives.",
+      actions: ["Record the invoice for each finished job today.", "Make invoicing part of closing a job, not a separate chore."],
+      impact: endedTotal > 0 ? endedTotal : null,
+      evidence: [ev("Jobs waiting", String(endedCount)), ev("Quoted value", endedTotal > 0 ? tzs(endedTotal) : "not quoted")],
+    });
+  }
+  const weakCars = vehicles.filter(v => v.days > 0 && v.revenue > 0 && (v.margin ?? 100) < T)
+    .map(v => ({ v, cur: v.revenue / v.days, sug: v.cost / v.days / (1 - T / 100) }))
+    .map(x => ({ ...x, gain: Math.max(0, x.sug - x.cur) * x.v.days })).filter(x => x.gain > 0).sort((a, b) => b.gain - a.gain).slice(0, 2);
+  for (const x of weakCars) {
+    findings.push({
+      id: `car-${x.v.id}`, severity: (x.v.margin ?? 0) < T / 2 ? "warning" : "info",
+      title: `${x.v.name} earns ${Math.round(x.v.margin ?? 0)}% margin, below your ${T}%`,
+      what: `It worked ${x.v.days} of ${elapsed} days, earned ${tzs(x.v.revenue)} and cost ${tzs(x.v.cost)} to run on trips.`,
+      why: "A car that works a lot but keeps little is the easiest to fix: the price, not the work, is the problem.",
+      actions: [`Quote about TZS ${Math.round(x.sug).toLocaleString("en-US")} a day for it instead of ${Math.round(x.cur).toLocaleString("en-US")}.`, "Check its fuel and allowance lines for anything unusual."],
+      impact: x.gain,
+      evidence: [ev("Days worked", `${x.v.days} of ${elapsed}`), ev("Earned per day", tzs(x.cur)), ev("Needed per day", tzs(x.sug))],
+    });
+  }
+  const idleCars = vehicles.filter(v => v.status !== "maintenance" && v.util < 30);
+  const workedDays = vehicles.reduce((s, v) => s + v.days, 0);
+  if (isCurrent && elapsed >= 7 && idleCars.length && workedDays > 0) {
+    const perDay = vehicles.reduce((s, v) => s + v.revenue, 0) / workedDays;
+    const idleDays = idleCars.reduce((s, v) => s + (elapsed - v.days), 0);
+    findings.push({
+      id: "idle", severity: "info",
+      title: `${idleCars.map(v => v.name).slice(0, 2).join(" and ")} ${idleCars.length === 1 ? "is" : "are"} idle most days`,
+      what: `${idleCars.length === 1 ? "It has" : "They have"} worked under 30% of the ${elapsed} days so far, about ${idleDays} idle car-days.`,
+      why: "A car that is not working still carries insurance, licences and depreciation. Every idle day is revenue that never arrives.",
+      actions: ["Offer idle cars to regular customers such as schools, hotels and companies for weekday transfers.", "Check whether a document or repair is keeping a car off the road."],
+      impact: Math.round(idleDays * perDay * 0.3),
+      evidence: [ev("Idle car-days", String(idleDays)), ev("Average earned per working day", tzs(perDay)), ev("Estimate assumes", "30% of idle days filled")],
+    });
+  }
+  if (customers.top && customers.active >= 3 && customers.top.share >= 40) {
+    findings.push({
+      id: "concentration", severity: "warning",
+      title: `${customers.top.name} is ${customers.top.share}% of this month's revenue`,
+      what: `One customer brings a large share of your income this month.`,
+      why: "If they delay payment or go elsewhere, a big part of the month disappears with them.",
+      actions: ["Keep this customer happy and paid up to date.", "Bring one or two more regular customers to a similar size over the next months."],
+      impact: null,
+      evidence: [ev("Top customer", customers.top.name), ev("Share of revenue", `${customers.top.share}%`)],
+    });
+  }
+  if (customers.active >= 4 && customers.returning / customers.active < 0.3) {
+    findings.push({
+      id: "repeat", severity: "info",
+      title: `Only ${customers.returning} of ${customers.active} customers had hired before`,
+      what: "Most of this month's work came from new names rather than repeat customers.",
+      why: "Repeat customers cost almost nothing to win and usually pay more reliably.",
+      actions: ["Follow up each new customer within a week of the job.", "Offer regulars a standing arrangement such as a monthly airport-transfer rate."],
+      impact: null, evidence: [ev("Returning", `${customers.returning} of ${customers.active}`)],
+    });
+  }
+  if (forecast && isCurrent && prevNet > 0 && forecast.net < prevNet * 0.8) {
+    findings.push({
+      id: "pace", severity: "warning",
+      title: `${p0label(y, m)} is on pace to finish below ${prevLabel}`,
+      what: `At the current pace profit closes near ${tzs(forecast.net)} against ${tzs(prevNet)} last month.`,
+      why: "There is still time to change the month, but bookings take days to arrange.",
+      actions: ["Chase quotes that have not been confirmed yet.", "Look at the next two weeks and fill empty days with short transfer jobs."],
+      impact: prevNet - forecast.net,
+      evidence: [ev("Forecast", tzs(forecast.net)), ev(prevLabel, tzs(prevNet))],
+    });
+  }
+  if (rev > 0 && margin >= T) {
+    findings.push({ id: "healthy", severity: "good", title: `Margin is ${Math.round(margin)}%, above your ${T}% target`, what: `You keep TZS ${Math.round(margin)} of every TZS 100 earned after all costs.`, why: "This is the number that decides whether growth is worth chasing.", actions: ["Protect it: keep quoting from cost per day."], impact: null, evidence: [ev("Margin", `${Math.round(margin)}%`), ev("Target", `${T}%`)] });
+  }
+  if (cur.revenue > 0 && prevRevenue > 0 && cur.revenue > prevRevenue * 1.1) {
+    findings.push({ id: "up", severity: "good", title: `Revenue is up ${Math.round(((cur.revenue - prevRevenue) / prevRevenue) * 100)}% on ${isCurrent ? "the same days in " : ""}${prevLabel}`, what: `${tzs(cur.revenue)} against ${tzs(prevRevenue)}.`, why: "More work is coming in. Check costs keep pace so it turns into profit.", actions: ["Keep the sources of this work going: note which customers and services drove it."], impact: null, evidence: [ev("Now", tzs(cur.revenue)), ev(prevLabel, tzs(prevRevenue))] });
+  }
+  const sevOrder = { critical: 0, warning: 1, info: 2, good: 3 } as const;
+  findings.sort((a, b) => sevOrder[a.severity] - sevOrder[b.severity] || (b.impact || 0) - (a.impact || 0));
+  const doctor = {
+    findings: findings.filter(f => f.severity !== "good").slice(0, 8).concat(findings.filter(f => f.severity === "good").slice(0, 2)),
+    totalImpact: findings.filter(f => f.severity !== "good" && f.id !== "margin" && f.impact).reduce((s, f) => s + (f.impact || 0), 0),
+  };
+  const comparison = {
+    label: prevLabel, sameDays: isCurrent,
+    rows: [
+      { name: "Revenue", now: cur.revenue, before: prevRevenue, lowerIsBetter: false },
+      { name: "Trip costs", now: cur.vehicleCosts, before: prevVeh, lowerIsBetter: true },
+      { name: "Company costs", now: cur.companyCosts, before: prevCo, lowerIsBetter: true },
+      { name: "Profit", now: cur.net, before: prevNet, lowerIsBetter: false },
+      { name: "Jobs", now: cur.jobs, before: num((prevRev as any[])[0]?.jobs), lowerIsBetter: false },
+    ],
+  };
+
   const order = { bad: 0, warn: 1, info: 2 } as const;
   attention.sort((a, b) => order[a.tone] - order[b.tone]);
   const attentionTop = attention.slice(0, 8);
@@ -309,7 +483,7 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
       revenue: cur.revenue, vehicleCosts: cur.vehicleCosts, companyCosts: cur.companyCosts, net: cur.net, margin, jobs: cur.jobs,
       prev: { label: prevLabel, revenue: prevRevenue, net: prevNet, margin: prevMargin },
       revenueDelta: pct(cur.revenue, prevRevenue), netDelta: prevNet > 0 ? pct(cur.net, prevNet) : null,
-      cumulative, history, direction, forecast, weekVsUsual, receivables, vehicles, customers, price, topCost,
+      cumulative, history, direction, forecast, weekVsUsual, receivables, vehicles, customers, price, topCost, services, costMoves: costMoves.slice(0, 5), doctor, comparison,
     },
     analysis: null as null | { paragraphs: Seg[][]; actions: string[] },
   };
@@ -319,17 +493,19 @@ export async function buildInsights(opts: { money: boolean; year?: number; month
 
 type Built = Awaited<ReturnType<typeof buildInsights>>;
 
-// Turns the numbers into the paragraphs a business adviser would write.
+// Turns the numbers into the paragraphs a business adviser would write: what
+// happened, where the money came from, what it cost, how the cars did, what is
+// still owed, where the month is heading, and what to do first.
 function narrate(r: any): { paragraphs: Seg[][]; actions: string[] } {
   const mo = r.money, p = r.period;
   const paragraphs: Seg[][] = [];
-  const actions: string[] = [];
   const when = p.isCurrent ? `${p.label} so far` : p.label;
 
   if (mo.revenue <= 0 && mo.vehicleCosts + mo.companyCosts <= 0) {
     return { paragraphs: [[{ t: `There is no revenue or cost recorded for ${when} yet. Once bookings are invoiced and expenses are added, this page writes the analysis for you.` }]], actions: [] };
   }
 
+  // 1. The headline.
   const p1: Seg[] = [{ t: "You earned " }, { t: tzs(mo.revenue), k: "g" }, { t: ` from ${mo.jobs} job${mo.jobs === 1 ? "" : "s"}` }];
   if (mo.revenueDelta !== null) {
     const up = mo.revenueDelta >= 0;
@@ -338,52 +514,81 @@ function narrate(r: any): { paragraphs: Seg[][]; actions: string[] } {
   }
   p1.push({ t: ". After trip and company costs your profit is " }, { t: tzs(mo.net), k: mo.net >= 0 ? "g" : "r" });
   if (mo.revenue > 0) {
-    p1.push({ t: `, a ${Math.round(mo.margin)}% margin` });
+    p1.push({ t: `, a ${Math.round(mo.margin)}% margin against your ${r.target}% target` });
     if (mo.prev.margin !== null) {
       const diff = Math.round(mo.margin - mo.prev.margin);
-      if (diff !== 0) p1.push({ t: `, ${Math.abs(diff)} point${Math.abs(diff) === 1 ? "" : "s"} ${diff > 0 ? "better" : "worse"} than ${mo.prev.label}` });
+      if (diff !== 0) p1.push({ t: `. That is ${Math.abs(diff)} point${Math.abs(diff) === 1 ? "" : "s"} ${diff > 0 ? "better" : "worse"} than ${mo.prev.label}` });
     }
   }
   p1.push({ t: "." });
+  if (mo.direction.key !== "unknown") p1.push({ t: ` Over the longer run the business is ${mo.direction.key === "growing" ? "growing" : mo.direction.key === "declining" ? "slowing" : "steady"}. ${mo.direction.text}` });
   paragraphs.push(p1);
 
-  const worked = mo.vehicles.filter((v: any) => v.days > 0);
-  if (worked.length) {
-    const best = worked[0];
-    const p2: Seg[] = [{ t: `The ${best.name} carried ${p.isCurrent ? "the month" : "it"}: it earned ` }, { t: `${tzs(best.profit)} profit`, k: "a" }, { t: ` and worked ${best.days} of ${p.elapsed} days.` }];
-    const weakest = [...worked].filter((v: any) => v.margin !== null).sort((a: any, b: any) => a.margin - b.margin)[0];
-    if (worked.length > 1 && weakest && weakest.id !== best.id && weakest.margin < r.target) {
-      p2.push({ t: ` The ${weakest.name} is the weak spot at a ${Math.round(weakest.margin)}% margin (earned ${short(weakest.revenue)}, cost ${short(weakest.cost)}).` });
+  // 2. Where the money came from.
+  if (mo.services.length) {
+    const s = mo.services;
+    const p2: Seg[] = [{ t: "Most of the work came from " }, { t: s[0].name, k: "a" }, { t: ` (${s[0].share}% of revenue, ${s[0].jobs} job${s[0].jobs === 1 ? "" : "s"})` }];
+    if (s[1]) p2.push({ t: `, then ${s[1].name} (${s[1].share}%)` });
+    if (s[2]) p2.push({ t: ` and ${s[2].name} (${s[2].share}%)` });
+    p2.push({ t: ". " });
+    if (mo.customers.active > 0) {
+      p2.push({ t: `${mo.customers.active} customer${mo.customers.active === 1 ? "" : "s"} hired you, ${mo.customers.returning} of them returning` });
+      if (mo.customers.top && mo.customers.active >= 2) p2.push({ t: `, and ${mo.customers.top.name} alone made up ${mo.customers.top.share}% of revenue` });
+      p2.push({ t: "." });
     }
-    const idle = mo.vehicles.filter((v: any) => v.util < 30 && v.status !== "maintenance");
-    if (idle.length && p.isCurrent && p.elapsed >= 7) p2.push({ t: ` ${idle.map((v: any) => v.name).slice(0, 2).join(" and ")} ${idle.length === 1 ? "has" : "have"} worked on under 30% of days.` });
     paragraphs.push(p2);
   }
 
-  const p3: Seg[] = [];
+  // 3. What it cost.
+  if (mo.vehicleCosts + mo.companyCosts > 0) {
+    const p3: Seg[] = [];
+    if (mo.revenue > 0) p3.push({ t: "Trip costs were " }, { t: tzs(mo.vehicleCosts), k: "b" }, { t: `, ${Math.round((mo.vehicleCosts / mo.revenue) * 100)}% of revenue, and company costs were ` }, { t: tzs(mo.companyCosts), k: "b" }, { t: `, ${Math.round((mo.companyCosts / mo.revenue) * 100)}%. ` });
+    else p3.push({ t: `Costs so far are ${tzs(mo.vehicleCosts + mo.companyCosts)} with no revenue to match yet. ` });
+    const top = mo.costMoves[0];
+    if (top) {
+      p3.push({ t: `The biggest line is ${top.name.toLowerCase()} at ${tzs(top.now)}` });
+      if (top.before > 0) {
+        const ch = Math.round(((top.now - top.before) / top.before) * 100);
+        if (Math.abs(ch) >= 5) p3.push({ t: `, ${ch > 0 ? "up" : "down"} ${Math.abs(ch)}% on ${p.isCurrent ? "the same days in " : ""}${mo.prev.label}` });
+      }
+      p3.push({ t: "." });
+    }
+    paragraphs.push(p3);
+  }
+
+  // 4. The cars.
+  const worked = mo.vehicles.filter((v: any) => v.days > 0);
+  if (worked.length) {
+    const best = worked[0];
+    const p4: Seg[] = [{ t: `The ${best.name} carried ${p.isCurrent ? "the month" : "it"}: it earned ` }, { t: `${tzs(best.profit)} profit`, k: "a" }, { t: ` and worked ${best.days} of ${p.elapsed} days.` }];
+    const weakest = [...worked].filter((v: any) => v.margin !== null).sort((a: any, b: any) => a.margin - b.margin)[0];
+    if (worked.length > 1 && weakest && weakest.id !== best.id && weakest.margin < r.target) {
+      p4.push({ t: ` The ${weakest.name} is the weak spot at a ${Math.round(weakest.margin)}% margin (earned ${short(weakest.revenue)}, cost ${short(weakest.cost)}).` });
+    }
+    const idle = mo.vehicles.filter((v: any) => v.util < 30 && v.status !== "maintenance");
+    if (idle.length && p.isCurrent && p.elapsed >= 7) p4.push({ t: ` ${idle.map((v: any) => v.name).slice(0, 2).join(" and ")} ${idle.length === 1 ? "has" : "have"} worked on under 30% of days.` });
+    paragraphs.push(p4);
+  }
+
+  // 5. Money still to collect, and where the month is heading.
+  const p5: Seg[] = [];
   if (mo.receivables.total > 0) {
-    p3.push({ t: "Money is the risk. " }, { t: `${tzs(mo.receivables.total)} is still unpaid`, k: "r" });
-    if (mo.receivables.b2 > 0) p3.push({ t: `, ${short(mo.receivables.b2)} of it more than 30 days old` });
-    p3.push({ t: ". " });
+    p5.push({ t: "Money is the risk. " }, { t: `${tzs(mo.receivables.total)} is still unpaid`, k: "r" });
+    if (mo.receivables.b2 > 0) p5.push({ t: `, ${short(mo.receivables.b2)} of it more than 30 days old` });
+    p5.push({ t: ". " });
   }
-  if (mo.forecast) p3.push({ t: `At this pace ${p.label} closes near ` }, { t: tzs(mo.forecast.net), k: "b" }, { t: " profit." });
-  if (mo.revenue > 0 && mo.margin < r.target) {
-    p3.push({ t: ` Your margin is under the ${r.target}% target${mo.topCost ? `; the biggest cost is ${mo.topCost.category} at ${short(mo.topCost.amount)}` : ""}.` });
+  if (mo.forecast) {
+    p5.push({ t: `At this pace ${p.label.split(" ")[0]} closes near ` }, { t: tzs(mo.forecast.net), k: "b" }, { t: " profit" });
+    if (mo.prev.net > 0) p5.push({ t: ` compared with ${short(mo.prev.net)} for the whole of ${mo.prev.label}` });
+    p5.push({ t: ". " });
   }
-  if (p3.length) paragraphs.push(p3);
+  if (mo.weekVsUsual && mo.weekVsUsual.pct !== null) p5.push({ t: `This week is ${Math.abs(Math.round(mo.weekVsUsual.pct))}% ${mo.weekVsUsual.pct >= 0 ? "ahead of" : "behind"} a usual week.` });
+  if (p5.length) paragraphs.push(p5);
 
-  // Things to do, taken from what the system already knows.
-  const ar = mo.receivables.items.filter((x: any) => x.age >= 7).slice(0, 2);
-  if (ar.length) actions.push(`Collect ${ar.map((x: any) => `${x.invoice || x.ref} (${x.customer || "customer"}, ${short(x.amount)})`).join(" and ")} this week.`);
-  const ne = r.attention.filter((a: any) => a.id.startsWith("ne-"));
-  if (ne.length) actions.push(`Invoice ${ne.length === 1 ? "the job" : `the ${ne.length} jobs`} that already ended: ${ne.slice(0, 2).map((a: any) => a.title.split(" ")[0]).join(", ")}.`);
-  const docs = r.attention.filter((a: any) => a.id.startsWith("vd-") || a.id.startsWith("dd-")).slice(0, 1);
-  if (docs.length) actions.push(`${docs[0].title.replace(/^./, (c: string) => c.toUpperCase())}. Renew before the next trip.`);
-  if (mo.price) actions.push(`Quote about TZS ${mo.price.suggested.toLocaleString("en-US")} a day for the ${mo.price.name} instead of ${mo.price.current.toLocaleString("en-US")} to reach a ${r.target}% margin at today's cost.`);
-  const idle = mo.vehicles.filter((v: any) => v.util < 30 && v.status !== "maintenance")[0];
-  if (idle && p.isCurrent && p.elapsed >= 7) actions.push(`Find work for the ${idle.name}. It is idle most days.`);
-
-  return { paragraphs, actions: actions.slice(0, 4) };
+  // What to do first: the doctor's findings, biggest money first.
+  const todo = (mo.doctor.findings as Finding[]).filter(f => f.severity !== "good").slice(0, 5)
+    .map(f => `${f.actions[0]}${f.impact && f.impact > 0 ? ` Worth about ${tzs(f.impact)}.` : ""} (${f.title})`);
+  return { paragraphs, actions: todo };
 }
 
 export type Insights = Built;

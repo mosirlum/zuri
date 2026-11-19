@@ -18,7 +18,7 @@ const navItems = [
   { label: "Compliance", href: "/admin/compliance", icon: ShieldAlert, roles: ["super_admin", "staff"] },
   { label: "Finance", href: "/admin/finance", icon: DollarSign, roles: ["super_admin"] },
   { label: "Reports", href: "/admin/reports", icon: BarChart3, roles: ["super_admin"] },
-  { label: "Growth", href: "/admin/growth", icon: TrendingUp, roles: ["super_admin"] },
+  { label: "Business Growth", href: "/admin/growth", icon: TrendingUp, roles: ["super_admin"] },
   { label: "Communication", href: "/admin/communication", icon: MessageSquare, roles: ["super_admin", "staff"] },
   { label: "Users", href: "/admin/users", icon: UserCog, roles: ["super_admin"] },
   { label: "Settings", href: "/admin/settings", icon: Settings, roles: ["super_admin", "staff"] },

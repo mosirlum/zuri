@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback, memo } from "react";
-import { Plus, Car, AlertTriangle, CheckCircle, Edit, Trash2, Info } from "lucide-react";
+import { useEffect, useState, useCallback, useRef, memo } from "react";
+import { Plus, Car, AlertTriangle, CheckCircle, Edit, Trash2, Info, Camera, X } from "lucide-react";
 
 interface Vehicle {
   id: number;
@@ -22,6 +22,29 @@ interface Vehicle {
   next_service_date: string;
   service_notes: string;
   notes: string;
+  image_data?: string | null;
+}
+
+// Shrinks a chosen photo in the browser before it is sent: longest side 960px,
+// JPEG. A phone photo of several MB becomes about 60 KB.
+async function shrinkImage(file: File): Promise<string> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = () => rej(new Error("bad image"));
+      i.src = url;
+    });
+    const scale = Math.min(1, 960 / Math.max(img.width, img.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(img.width * scale);
+    c.height = Math.round(img.height * scale);
+    c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL("image/jpeg", 0.78);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 const statusColors: Record<string, string> = {
@@ -78,8 +101,9 @@ function ServiceRow({ last, next, notes }: { last: string; next: string | null; 
   );
 }
 
-const VehicleCard = memo(({ vehicle, getDaysUntil, onEdit, onDelete }: {
+const VehicleCard = memo(({ vehicle, getDaysUntil, onEdit, onDelete, onPhoto }: {
   vehicle: Vehicle;
+  onPhoto: (v: Vehicle, dataUrl: string | null) => Promise<string | null>;
   getDaysUntil: (date: string) => number | null;
   onEdit: (v: Vehicle) => void;
   onDelete: (v: Vehicle) => void;
@@ -93,8 +117,59 @@ const VehicleCard = memo(({ vehicle, getDaysUntil, onEdit, onDelete }: {
     return "ok";
   })();
 
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [photoError, setPhotoError] = useState("");
+
+  const pick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    if (!f.type.startsWith("image/")) { setPhotoError("Choose an image file"); return; }
+    setBusy(true); setPhotoError("");
+    try {
+      const err = await onPhoto(vehicle, await shrinkImage(f));
+      if (err) setPhotoError(err);
+    } catch { setPhotoError("Could not read that image"); }
+    setBusy(false);
+  };
+
+  const removePhoto = async () => {
+    setBusy(true); setPhotoError("");
+    const err = await onPhoto(vehicle, null);
+    if (err) setPhotoError(err);
+    setBusy(false);
+  };
+
   return (
-    <div className="bg-paper rounded-2xl border border-ink/10 overflow-hidden hover:border-gold/40 transition-all">
+    <div className="group/card bg-paper rounded-2xl border border-ink/10 overflow-hidden hover:border-gold/40 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-ink/5 transition-all duration-300">
+      <div className="relative h-44 bg-gradient-to-br from-ink-soft to-ink overflow-hidden">
+        {vehicle.image_data ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={vehicle.image_data} alt={`${vehicle.make} ${vehicle.model}`}
+            className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover/card:scale-105" />
+        ) : (
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-paper/30">
+            <Car className="w-12 h-12" />
+            <span className="text-xs mt-2 tracking-widest uppercase">No photo yet</span>
+          </div>
+        )}
+        <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-ink/70 to-transparent" />
+        <div className="absolute bottom-3 right-3 flex gap-2">
+          {vehicle.image_data && (
+            <button onClick={removePhoto} disabled={busy} title="Remove photo"
+              className="p-2 rounded-lg bg-ink/60 text-paper/80 hover:bg-red-600 hover:text-white backdrop-blur transition-colors disabled:opacity-50">
+              <X className="w-4 h-4" />
+            </button>
+          )}
+          <button onClick={() => fileRef.current?.click()} disabled={busy}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-paper/90 text-ink text-xs font-medium hover:bg-gold hover:text-white backdrop-blur transition-colors disabled:opacity-60">
+            <Camera className="w-4 h-4" /> {busy ? "Saving..." : vehicle.image_data ? "Change" : "Add photo"}
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={pick} />
+        </div>
+        {photoError && <div className="absolute top-3 left-3 right-3 text-xs bg-red-600 text-white rounded-lg px-3 py-2">{photoError}</div>}
+      </div>
       <div className="bg-ink px-5 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gold/20 flex items-center justify-center">
@@ -402,6 +477,19 @@ export default function FleetPage() {
     setDeleteVehicle(v);
   }, []);
 
+  // Returns an error message, or null when saved.
+  const handlePhoto = useCallback(async (v: Vehicle, dataUrl: string | null) => {
+    try {
+      const res = await fetch("/api/admin/vehicles/image", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: v.id, image_data: dataUrl }),
+      });
+      if (!res.ok) return (await res.json().catch(() => ({}))).error || "Could not save the photo";
+      setVehicles(list => list.map(x => (x.id === v.id ? { ...x, image_data: dataUrl } : x)));
+      return null;
+    } catch { return "Could not save the photo"; }
+  }, []);
+
   const filtered = filter === "all" ? vehicles : vehicles.filter(v => v.status === filter);
 
   return (
@@ -446,9 +534,9 @@ export default function FleetPage() {
           <p className="text-muted text-sm">No vehicles found.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5 z-stagger">
           {filtered.map(vehicle => (
-            <VehicleCard key={vehicle.id} vehicle={vehicle} getDaysUntil={getDaysUntil} onEdit={handleEdit} onDelete={handleDelete} />
+            <VehicleCard key={vehicle.id} vehicle={vehicle} getDaysUntil={getDaysUntil} onEdit={handleEdit} onDelete={handleDelete} onPhoto={handlePhoto} />
           ))}
         </div>
       )}
