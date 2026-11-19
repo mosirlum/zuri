@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { neon } from "@neondatabase/serverless";
+import { logActivity } from "@/lib/activity";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -29,6 +30,7 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "Booking must be invoiced before it can be marked as paid" }, { status: 404 });
     }
 
+    await logActivity(session, "Payment recorded", `${result[0].booking_ref}`);
     return NextResponse.json(result[0]);
   } catch (err) {
     console.error(err);

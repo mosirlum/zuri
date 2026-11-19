@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { toAmount, toText, toDate } from "@/lib/validate";
 import { neon } from "@neondatabase/serverless";
+import { logActivity } from "@/lib/activity";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -63,6 +64,7 @@ export async function POST(req: NextRequest) {
         ${next_due_date || null}
       ) RETURNING *
     `;
+    await logActivity(session, "Expense added", `${toText(category, 60)} · ${amt.toLocaleString("en-US")} TZS`);
     return NextResponse.json(result[0]);
   } catch (err) {
     console.error(err);

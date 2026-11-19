@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
+import DashboardInsights from "@/components/DashboardInsights";
 import {
   Car, Users, CalendarCheck, ShieldAlert, CheckCircle, Clock,
   Plus, TrendingUp, ArrowRight, DollarSign,
@@ -126,6 +127,8 @@ export default function AdminDashboard() {
           {new Date().toLocaleDateString("en-TZ", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
         </p>
       </div>
+
+      <DashboardInsights isBoss={isBoss} />
 
       <div className={`grid grid-cols-2 ${isBoss ? "lg:grid-cols-5" : "lg:grid-cols-4"} gap-4`}>
         <StatCard icon={Car} label="Vehicles Free Today"

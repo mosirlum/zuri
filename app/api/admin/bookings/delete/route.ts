@@ -3,6 +3,7 @@ import { neon } from "@neondatabase/serverless";
 import { requireBoss, isGuardFailure } from "@/lib/guards";
 import { toId } from "@/lib/validate";
 import { logError } from "@/lib/error-log";
+import { logActivity } from "@/lib/activity";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -24,6 +25,7 @@ export async function DELETE(req: NextRequest) {
       sql`DELETE FROM bookings WHERE id = ${id}`,
     ]);
 
+    await logActivity(guard.session, "Booking deleted", `Booking #${id}`);
     return NextResponse.json({ success: true });
   } catch (err) {
     await logError("bookings/delete", err);

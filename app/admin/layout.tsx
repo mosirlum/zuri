@@ -7,7 +7,7 @@ import Link from "next/link";
 import {
   LayoutDashboard, Car, Users, CalendarCheck,
   ShieldAlert, DollarSign, BarChart3, MessageSquare,
-  LogOut, Menu, ChevronRight, UserCog, Settings,
+  LogOut, Menu, ChevronRight, UserCog, Settings, TrendingUp,
 } from "lucide-react";
 
 const navItems = [
@@ -18,6 +18,7 @@ const navItems = [
   { label: "Compliance", href: "/admin/compliance", icon: ShieldAlert, roles: ["super_admin", "staff"] },
   { label: "Finance", href: "/admin/finance", icon: DollarSign, roles: ["super_admin"] },
   { label: "Reports", href: "/admin/reports", icon: BarChart3, roles: ["super_admin"] },
+  { label: "Growth", href: "/admin/growth", icon: TrendingUp, roles: ["super_admin"] },
   { label: "Communication", href: "/admin/communication", icon: MessageSquare, roles: ["super_admin", "staff"] },
   { label: "Users", href: "/admin/users", icon: UserCog, roles: ["super_admin"] },
   { label: "Settings", href: "/admin/settings", icon: Settings, roles: ["super_admin", "staff"] },
@@ -88,14 +89,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           {filteredNav.map((item) => {
             const Icon = item.icon;
-            const isActive = pathname === item.href;
+            const isActive = item.href === "/admin" ? pathname === "/admin" : pathname === item.href || pathname.startsWith(item.href + "/");
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 onClick={() => setSidebarOpen(false)}
                 className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
-                  isActive ? "bg-gold text-ink" : "text-paper/70 hover:text-paper hover:bg-paper/5"
+                  isActive ? "bg-gold/20 text-white shadow-[inset_3px_0_0_#b8843a]" : "text-paper/60 hover:text-paper hover:bg-paper/5 hover:translate-x-0.5"
                 }`}
               >
                 <Icon className="w-4 h-4 flex-shrink-0" />
@@ -146,7 +147,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </span>
           </div>
         </header>
-        <main className="flex-1 p-6 lg:p-8 overflow-auto">{children}</main>
+        <main className="flex-1 p-6 lg:p-8 overflow-auto"><div key={pathname} className="z-page">{children}</div></main>
       </div>
     </div>
   );

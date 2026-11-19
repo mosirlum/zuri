@@ -92,3 +92,18 @@ body {
   color: rgba(250, 247, 241, 0.5);
   margin-top: 0.4rem;
 }
+
+/* ── Admin motion ───────────────────────────────────────────────────────── */
+@keyframes zdraw { to { stroke-dashoffset: 0; } }
+@keyframes zgrow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes zview { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.z-page { animation: zview .45s cubic-bezier(.2, .7, .2, 1); }
+.z-stagger > * { animation: zview .55s cubic-bezier(.2, .7, .2, 1) both; }
+.z-stagger > *:nth-child(2) { animation-delay: 60ms; }
+.z-stagger > *:nth-child(3) { animation-delay: 120ms; }
+.z-stagger > *:nth-child(4) { animation-delay: 180ms; }
+.z-stagger > *:nth-child(5) { animation-delay: 240ms; }
+.z-stagger > *:nth-child(n+6) { animation-delay: 300ms; }
+@media (prefers-reduced-motion: reduce) {
+  .z-page, .z-stagger > * { animation: none; }
+}

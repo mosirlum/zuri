@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { neon } from "@neondatabase/serverless";
+import { logActivity } from "@/lib/activity";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -209,6 +210,7 @@ export async function POST(req: NextRequest) {
       `;
     }
 
+    await logActivity(session, "Booking created", `${booking.booking_ref}`);
     return NextResponse.json(booking);
   } catch (err) {
     console.error(err);
@@ -315,6 +317,7 @@ export async function PUT(req: NextRequest) {
       }
     }
 
+    await logActivity(session, "Booking edited", `${result[0].booking_ref}`);
     return NextResponse.json(result[0]);
   } catch (err) {
     console.error(err);

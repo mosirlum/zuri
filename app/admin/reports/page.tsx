@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback } from "react";
 import { BarChart3, Lock, TrendingUp, TrendingDown, Car, Building2, CalendarCheck, Download, FileText, DollarSign, AlertTriangle, Clock, Minus, Calendar, Info, ArrowRight, Receipt } from "lucide-react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
+import { isVehicleCost } from "@/lib/money-rules";
+import WrittenAnalysis from "@/components/WrittenAnalysis";
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -23,22 +25,11 @@ const SERVICE_LABELS: Record<string, string> = {
   vip_wedding: "VIP & Wedding", tours_safari: "Tours & Safari", other: "Other",
 };
 
-// Costs that exist because of the cars — they rise and fall with how much
-// the fleet is used or what it needs to stay on the road.
-const VEHICLE_CATEGORIES = new Set([
-  "fuel", "maintenance", "insurance_premium", "license_renewal", "road_worthiness",
-]);
-
 type FilterMode = "week" | "month" | "year" | "all";
 
 const isInvoiced = (b: any) => !!b.invoice_number;
 const tripCostOf = (b: any) => (parseFloat(b.trip_cost) || 0) + (parseFloat(b.owner_payout_amount) || 0);
 
-// An expense belongs to the vehicle layer if it was logged against a trip, or
-// if its category is inherently about running a car. Everything else is the
-// cost of keeping the company's doors open, trips or no trips.
-const isVehicleCost = (e: any) =>
-  e.expense_type === "trip" || VEHICLE_CATEGORIES.has(e.category);
 
 
 // Pulls the same four headline numbers out of any period's payload, so the
@@ -684,6 +675,8 @@ export default function ReportsPage() {
         <div className="text-center py-12 text-muted text-sm animate-pulse">Loading report...</div>
       ) : !summary ? null : (
         <>
+          {filterMode === "month" && <WrittenAnalysis year={selectedYear} month={selectedMonth} />}
+
           {/* Summary cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <ReportCard icon={TrendingUp} tone="green" label="Total Revenue"

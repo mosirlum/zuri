@@ -1,6 +1,7 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { neon } from "@neondatabase/serverless";
+import { logActivity } from "@/lib/activity";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -102,6 +103,7 @@ export async function POST(req: NextRequest) {
         ${body.notes || null}
       ) RETURNING *
     `;
+    await logActivity(session, "Vehicle added", `${result[0].make} ${result[0].model} ${result[0].plate_number || ""}`);
     return NextResponse.json(result[0]);
   } catch (err) {
     console.error(err);
@@ -134,6 +136,7 @@ export async function PUT(req: NextRequest) {
       WHERE id = ${body.id}
       RETURNING *
     `;
+    await logActivity(session, "Vehicle edited", `${result[0].make} ${result[0].model} ${result[0].plate_number || ""}`);
     return NextResponse.json(result[0]);
   } catch (err) {
     console.error(err);

@@ -1,6 +1,7 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { neon } from "@neondatabase/serverless";
+import { logActivity } from "@/lib/activity";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -27,6 +28,7 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "Booking not found or not yet completed" }, { status: 404 });
     }
 
+    await logActivity(session, "Invoice recorded", `${result[0].booking_ref} · ${body.invoice_number}`);
     return NextResponse.json(result[0]);
   } catch (err) {
     console.error(err);

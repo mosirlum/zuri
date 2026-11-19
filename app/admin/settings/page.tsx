@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { KeyRound, User, Check } from "lucide-react";
+import { KeyRound, User, Check, Target } from "lucide-react";
 
 const inp = "w-full border border-ink/15 bg-paper text-ink px-3 py-2.5 rounded-lg text-sm outline-none focus:border-gold transition-colors";
 const lbl = "block text-xs tracking-widest uppercase text-muted mb-1.5 font-medium";
@@ -88,6 +88,47 @@ function ChangePassword() {
   );
 }
 
+function BusinessSettings() {
+  const [value, setValue] = useState("");
+  const [state, setState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    fetch("/api/admin/business-settings").then(r => (r.ok ? r.json() : null)).then(d => { if (d) setValue(String(d.target_margin)); }).catch(() => {});
+  }, []);
+
+  const save = async () => {
+    setState("saving"); setMsg("");
+    try {
+      const res = await fetch("/api/admin/business-settings", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target_margin: value }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setMsg(d.error || "Something went wrong"); setState("error"); return; }
+      setState("saved"); setTimeout(() => setState("idle"), 2000);
+    } catch { setMsg("Could not save. Nothing was changed."); setState("error"); }
+  };
+
+  return (
+    <div className="bg-paper rounded-2xl border border-ink/10 overflow-hidden">
+      <div className="px-6 py-4 border-b border-ink/10 flex items-center gap-2">
+        <Target className="w-4 h-4 text-gold" />
+        <h2 className="font-display text-xl font-medium">Business</h2>
+      </div>
+      <div className="p-6 max-w-sm">
+        <label className={lbl}>Target profit margin (%)</label>
+        <input className={inp} inputMode="decimal" value={value} onChange={e => setValue(e.target.value)} />
+        <p className="text-xs text-muted mt-2">The written analysis and Growth page warn you when a vehicle or the month falls below this, and suggest a price to get back to it.</p>
+        {msg && <p className="text-sm text-red-600 mt-2">{msg}</p>}
+        <button onClick={save} disabled={state === "saving"} className="mt-4 bg-ink text-paper px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-gold transition-colors disabled:opacity-60">
+          {state === "saving" ? "Saving..." : state === "saved" ? "Saved" : "Save"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const { data: session } = useSession();
   const role = (session?.user as any)?.role;
@@ -120,6 +161,8 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      {role === "super_admin" && <BusinessSettings />}
 
       <ChangePassword />
     </div>

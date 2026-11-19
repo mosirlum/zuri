@@ -30,6 +30,75 @@ const FEATURES = [
   { icon: ICONS.handshake, title: "Stronger service", sub: "For our clients" },
 ];
 
+// A small scene for the brand panel: a safari vehicle driving into a sunset.
+// Pure SVG and CSS, no image to load, and it stops moving for anyone who has
+// asked their device to reduce motion.
+function LoginScene() {
+  return (
+    <div className="absolute inset-0" aria-hidden="true" style={{ background: "linear-gradient(180deg,#2b1a3a 0%,#7a3b4a 38%,#e98a2e 70%,#f6c26b 100%)" }}>
+      <style>{`
+        @keyframes zs-sun { from { transform: translateY(6px); } to { transform: translateY(-6px); } }
+        @keyframes zs-dash { to { transform: translateX(-120px); } }
+        @keyframes zs-bob { 50% { transform: translateY(-2.5px); } }
+        @keyframes zs-spin { to { transform: rotate(360deg); } }
+        @keyframes zs-far { to { transform: translateX(-800px); } }
+        @keyframes zs-dust { 0% { opacity: .5; transform: translate(0,0) scale(.6); } 100% { opacity: 0; transform: translate(-60px,-12px) scale(1.6); } }
+        .zs-sun { animation: zs-sun 9s ease-in-out infinite alternate; }
+        .zs-dash { animation: zs-dash 1.1s linear infinite; }
+        .zs-car { animation: zs-bob 1.4s ease-in-out infinite; }
+        .zs-wheel { animation: zs-spin .55s linear infinite; transform-box: fill-box; transform-origin: center; }
+        .zs-far { animation: zs-far 90s linear infinite; }
+        .zs-dust { animation: zs-dust 1.6s ease-out infinite; opacity: 0; }
+        @media (prefers-reduced-motion: reduce) { .zs-sun,.zs-dash,.zs-car,.zs-wheel,.zs-far,.zs-dust { animation: none; } .zs-dust { opacity: .25; } }
+      `}</style>
+      <svg viewBox="0 0 800 700" preserveAspectRatio="xMidYMax slice" className="absolute inset-0 h-full w-full">
+        <defs>
+          <radialGradient id="zs-sg" cx="50%" cy="50%" r="50%">
+            <stop offset="0" stopColor="#fff6d6" /><stop offset=".35" stopColor="#ffd27a" /><stop offset="1" stopColor="#ffd27a" stopOpacity="0" />
+          </radialGradient>
+        </defs>
+        <g className="zs-sun"><circle cx="560" cy="430" r="150" fill="url(#zs-sg)" /><circle cx="560" cy="430" r="46" fill="#fff3c9" /></g>
+        <g className="zs-far" opacity=".55" fill="#3a1f2c">
+          <path id="zs-sky" d="M0 520h60v-70h30v70h20v-110h34v110h26v-60h30v60h40v-90h28v90h50v-50h24v50h60v-120h30v120h40v-70h30v70h50v-100h26v100h60v-60h30v60h50v-80h30v80h60v-50h26v50H800v40H0z" />
+          <path transform="translate(800 0)" d="M0 520h60v-70h30v70h20v-110h34v110h26v-60h30v60h40v-90h28v90h50v-50h24v50h60v-120h30v120h40v-70h30v70h50v-100h26v100h60v-60h30v60h50v-80h30v80h60v-50h26v50H800v40H0z" />
+          <path transform="translate(-800 0)" d="M0 520h60v-70h30v70h20v-110h34v110h26v-60h30v60h40v-90h28v90h50v-50h24v50h60v-120h30v120h40v-70h30v70h50v-100h26v100h60v-60h30v60h50v-80h30v80h60v-50h26v50H800v40H0z" />
+        </g>
+        <path d="M-20 340c60-60 150-90 230-70 20-30 80-46 130-30 60-24 130-6 150 30 40 4 70 30 60 60H-20z" fill="#2a1522" opacity=".9" />
+        <rect x="140" y="330" width="14" height="190" fill="#24121c" />
+        <rect x="0" y="520" width="800" height="180" fill="#2a1620" />
+        <rect x="0" y="548" width="800" height="152" fill="#1e0f17" />
+        <g className="zs-dash" fill="#f6c26b" opacity=".8">
+          {[0, 120, 240, 360, 480, 600, 720, 840].map(x => <rect key={x} x={x} y="612" width="70" height="6" rx="3" />)}
+        </g>
+        <g className="zs-car">
+          <g transform="translate(250 462)">
+            <path d="M0 96 L0 62 Q0 52 12 48 L50 40 L84 6 Q90 0 100 0 L214 0 Q226 0 232 8 L262 48 L300 54 Q312 56 312 68 L312 96 Z" fill="#14100c" />
+            <path d="M92 12 L56 44 L150 44 L150 12 Z M160 12 L160 44 L244 44 L222 12 Z" fill="#6a4a36" opacity=".85" />
+            <rect x="96" y="-8" width="116" height="5" rx="2.5" fill="#3a2e24" />
+            <rect x="290" y="62" width="22" height="9" rx="4" fill="#ffe2a0" />
+            <rect x="0" y="66" width="10" height="9" rx="4" fill="#d6402c" />
+            <rect x="120" y="70" width="56" height="12" rx="3" fill="#E08E0B" />
+            <text x="148" y="80" textAnchor="middle" style={{ fill: "#1b120a", font: "700 9px sans-serif" }}>ZURI</text>
+            {[66, 246].map(x => (
+              <g key={x} transform={`translate(${x} 98)`}>
+                <circle r="25" fill="#0a0806" />
+                <circle className="zs-wheel" r="14" fill="#6b5c4b" />
+                <g className="zs-wheel" stroke="#b9a68b" strokeWidth="3"><path d="M-12 0H12M0 -12V12" /></g>
+              </g>
+            ))}
+          </g>
+          <g transform="translate(236 600)">
+            <circle className="zs-dust" r="10" fill="#d9b684" />
+            <circle className="zs-dust" r="8" fill="#d9b684" style={{ animationDelay: ".5s" }} />
+            <circle className="zs-dust" r="12" fill="#d9b684" style={{ animationDelay: "1s" }} />
+          </g>
+        </g>
+      </svg>
+      <div className="absolute inset-0 bg-gradient-to-t from-[#120d08]/40 via-transparent to-[#120d08]/20" />
+    </div>
+  );
+}
+
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -73,10 +142,7 @@ export default function LoginPage() {
           style={{ background: `linear-gradient(180deg, #F6B53A, ${AMBER} 55%, #B96A00)`, borderRadius: "0 38% 38% 0 / 0 50% 50% 0" }}
         />
         <div className="relative h-full overflow-hidden lg:[border-radius:0_38%_38%_0/0_50%_50%_0]">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/images/hero-bg.jpg" alt="" className="zl-drift absolute inset-0 h-full w-full object-cover object-[60%_65%]" />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#120d08] via-[#120d08]/45 to-[#120d08]/20" />
-          <div className="absolute inset-0 bg-gradient-to-br from-[#E08E0B]/30 via-transparent to-transparent mix-blend-soft-light" />
+          <LoginScene />
 
           <div className="relative h-full flex flex-col justify-between p-6 sm:p-10 lg:p-14">
             <div className="flex items-center gap-3">

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireBoss, isGuardFailure } from "@/lib/guards";
 import { neon } from "@neondatabase/serverless";
+import { logActivity } from "@/lib/activity";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -106,6 +107,7 @@ export async function POST(req: NextRequest) {
         ${body.notes || null}
       ) RETURNING *
     `;
+    await logActivity(session, "Driver added", `${result[0].full_name}`);
     return NextResponse.json(result[0]);
   } catch (err) {
     console.error(err);
@@ -146,6 +148,7 @@ export async function PUT(req: NextRequest) {
       WHERE id = ${body.id}
       RETURNING *
     `;
+    await logActivity(session, "Driver edited", `${result[0].full_name}`);
     return NextResponse.json(result[0]);
   } catch (err) {
     console.error(err);
@@ -177,6 +180,7 @@ export async function DELETE(req: NextRequest) {
     }
 
     await sql`DELETE FROM drivers WHERE id = ${body.id}`;
+    await logActivity(guard.session, "Driver deleted", `Driver #${body.id}`);
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error(err);

@@ -1,0 +1,466 @@
+<title>Zuri Business OS Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap">
+<style>
+/* Layout concept: dark espresso rail, warm light workspace, amber used only for the one thing that matters on each screen. */
+:root{
+  --bg:#F6F1E8; --surface:#FFFFFF; --surface-2:#FBF8F2; --ink:#1F160C; --ink-2:#5B4E40; --ink-3:#85796A; --line:#E8DFD0;
+  --amber:#E08E0B; --amber-ink:#8F5500; --amber-soft:#FCEFD3;
+  --good:#2E7D4F; --good-soft:#E3F3E8; --bad:#B8362A; --bad-soft:#FBE6E3; --warn:#A8700F; --warn-soft:#FBF0D5;
+  --side:#1B120A; --side-ink:#EADFCC; --side-dim:#9C8F7C; --shadow:0 1px 2px rgba(60,35,5,.06),0 8px 24px -12px rgba(60,35,5,.18);
+  --f-display:"Cormorant Garamond",Georgia,serif; --f-ui:"Manrope",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#130D07; --surface:#1E1610; --surface-2:#251B13; --ink:#F4EBDD; --ink-2:#C4B7A5; --ink-3:#8E8171; --line:#35281C;
+  --amber:#F0A21C; --amber-ink:#F5B84A; --amber-soft:#3A2A10; --good:#5CC38A; --good-soft:#17301F; --bad:#F07A6B; --bad-soft:#3A1A16; --warn:#E8B04A; --warn-soft:#3A2C10;
+  --side:#0E0905; --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.6); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#130D07; --surface:#1E1610; --surface-2:#251B13; --ink:#F4EBDD; --ink-2:#C4B7A5; --ink-3:#8E8171; --line:#35281C;
+  --amber:#F0A21C; --amber-ink:#F5B84A; --amber-soft:#3A2A10; --good:#5CC38A; --good-soft:#17301F; --bad:#F07A6B; --bad-soft:#3A1A16; --warn:#E8B04A; --warn-soft:#3A2C10;
+  --side:#0E0905; --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.6); color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 var(--f-ui);padding-left:max(0px,env(safe-area-inset-left,0px));padding-right:max(0px,env(safe-area-inset-right,0px));-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--amber);outline-offset:2px;border-radius:6px}
+.num{font-variant-numeric:tabular-nums}
+h1,h2,h3{margin:0;font-weight:600}
+.display{font-family:var(--f-display);letter-spacing:-.01em}
+
+/* ---------- Login ---------- */
+#login{position:fixed;inset:0;z-index:50;display:grid;grid-template-columns:1.15fr 1fr;background:var(--bg);transition:opacity .6s,transform .6s,visibility .6s}
+#login.out{opacity:0;transform:scale(1.02);visibility:hidden}
+.scene{position:relative;overflow:hidden;background:linear-gradient(180deg,#2b1a3a 0%,#7a3b4a 38%,#e98a2e 70%,#f6c26b 100%);border-radius:0 38% 38% 0/0 50% 50% 0;box-shadow:12px 0 0 -2px var(--amber)}
+.scene svg{position:absolute;inset:0;width:100%;height:100%}
+.sun{animation:sun 9s ease-in-out infinite alternate;transform-origin:50% 50%}
+@keyframes sun{from{transform:translateY(6px)}to{transform:translateY(-6px)}}
+.road-dash{animation:dash 1.1s linear infinite}
+@keyframes dash{to{transform:translateX(-120px)}}
+.car{animation:bob 1.4s ease-in-out infinite}
+@keyframes bob{50%{transform:translateY(-2.5px)}}
+.wheel{animation:spin .55s linear infinite;transform-box:fill-box;transform-origin:center}
+@keyframes spin{to{transform:rotate(360deg)}}
+.far{animation:far 60s linear infinite}
+@keyframes far{to{transform:translateX(-400px)}}
+.dust{animation:dust 1.6s ease-out infinite;opacity:0}
+.dust:nth-child(2){animation-delay:.5s}.dust:nth-child(3){animation-delay:1s}
+@keyframes dust{0%{opacity:.5;transform:translate(0,0) scale(.6)}100%{opacity:0;transform:translate(-60px,-12px) scale(1.6)}}
+.scene-copy{position:absolute;left:clamp(24px,5vw,64px);top:clamp(24px,5vw,56px);color:#fff}
+.brand-row{display:flex;align-items:center;gap:12px}
+.emblem{width:48px;height:48px;border-radius:50%;background:radial-gradient(circle at 50% 35%,#F6B53A,#E08E0B 60%,#B96A00);display:grid;place-items:center;box-shadow:0 0 0 2px rgba(255,255,255,.25)}
+.emblem svg{position:static;width:28px;height:28px}
+.scene-copy .display{font-size:clamp(34px,4.5vw,58px);line-height:1.02;margin-top:clamp(20px,5vh,56px)}
+.scene-copy p{opacity:.85;letter-spacing:.04em;margin:12px 0 0}
+.login-side{display:grid;place-items:center;padding:24px;position:relative}
+.login-card{width:100%;max-width:25rem;background:var(--surface);border-radius:28px;padding:36px 34px;box-shadow:var(--shadow);transform:translateY(16px);opacity:0;animation:rise .8s .35s cubic-bezier(.2,.7,.2,1) forwards}
+@keyframes rise{to{transform:none;opacity:1}}
+.login-card h2{font:600 34px/1.1 var(--f-display);margin-top:18px;text-align:center}
+.login-card .sub{text-align:center;color:var(--ink-3);margin-top:4px}
+.field{position:relative;margin-top:14px}
+.field input{width:100%;height:52px;border:1px solid var(--line);background:var(--surface-2);border-radius:16px;padding:0 16px;color:var(--ink);font:inherit;outline:none;transition:border .2s,box-shadow .2s}
+.field input:focus{border-color:var(--amber);box-shadow:0 0 0 4px color-mix(in srgb,var(--amber) 18%,transparent)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:40px;padding:0 16px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font-weight:600;transition:transform .15s,box-shadow .2s,background .2s}
+.btn:hover{transform:translateY(-1px);box-shadow:var(--shadow)}
+.btn:active{transform:none}
+.btn.primary{background:linear-gradient(180deg,#F0A21C,#E08E0B);border-color:transparent;color:#fff;box-shadow:0 10px 24px -12px rgba(224,142,11,.8)}
+.btn.big{height:52px;width:100%;border-radius:16px;margin-top:18px;font-size:15px}
+.btn.sm{height:32px;padding:0 12px;border-radius:10px;font-size:12.5px}
+.btn.ghost{background:transparent}
+.btn.danger{color:var(--bad)}
+
+/* ---------- App shell ---------- */
+#app{display:grid;grid-template-columns:240px 1fr;min-height:100%}
+.rail{background:var(--side);color:var(--side-ink);padding:20px 14px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:6px}
+.rail .brand-row{padding:4px 8px 18px}
+.rail .brand-row b{font:600 20px/1 var(--f-display);display:block}
+.rail .brand-row small{color:var(--side-dim);font-size:11px;letter-spacing:.2em;text-transform:uppercase}
+.rail .emblem{width:40px;height:40px}
+.nav{position:relative;display:flex;flex-direction:column;gap:2px}
+.nav a{position:relative;z-index:1;display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:12px;text-decoration:none;color:var(--side-dim);font-weight:500;transition:color .2s}
+.nav a:hover{color:var(--side-ink)}
+.nav a.on{color:#fff}
+.nav a svg{width:18px;height:18px;flex:none}
+.nav .pill{position:absolute;left:0;right:0;height:40px;border-radius:12px;background:rgba(224,142,11,.18);box-shadow:inset 3px 0 0 var(--amber);transition:transform .35s cubic-bezier(.3,.8,.2,1),height .2s;z-index:0}
+.nav .badge{margin-left:auto;background:var(--amber);color:#1b120a;border-radius:999px;font-size:11px;font-weight:700;padding:1px 7px}
+.rail .me{margin-top:auto;display:flex;align-items:center;gap:10px;padding:10px;border-radius:12px;background:rgba(255,255,255,.05)}
+.av{width:32px;height:32px;border-radius:50%;background:var(--amber);color:#1b120a;display:grid;place-items:center;font-weight:700;font-size:13px;flex:none}
+.me small{display:block;color:var(--side-dim);font-size:11px}
+.main{min-width:0;padding:28px max(24px,3vw) 80px}
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:22px}
+.top h1{font:600 clamp(30px,3.4vw,40px)/1.05 var(--f-display)}
+.top .sub{color:var(--ink-3);margin-top:4px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 14px;font-weight:600;font-size:12.5px;color:var(--ink-2);transition:all .2s}
+.chip:hover{border-color:var(--amber)}
+.chip.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+#view{animation:view .45s cubic-bezier(.2,.7,.2,1)}
+@keyframes view{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.stag>*{animation:view .55s cubic-bezier(.2,.7,.2,1) both;animation-delay:calc(var(--i,0)*60ms)}
+
+/* ---------- Components ---------- */
+.card{background:var(--surface);border-radius:20px;padding:22px;box-shadow:var(--shadow);min-width:0}
+.card.flat{box-shadow:none;border:1px solid var(--line)}
+.card h3{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);font-weight:600;margin-bottom:14px}
+.grid{display:grid;gap:16px}
+.g2{grid-template-columns:1.4fr 1fr}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}.g21{grid-template-columns:1fr 1fr}
+.hero{display:grid;grid-template-columns:1.3fr 1fr;gap:16px;margin-bottom:16px}
+.hero .big{font:600 clamp(40px,5vw,64px)/1 var(--f-display);margin:6px 0 2px}
+.hero .lab{color:var(--ink-3);font-weight:600;font-size:12px;letter-spacing:.14em;text-transform:uppercase}
+.delta{display:inline-flex;align-items:center;gap:6px;font-weight:700;padding:3px 10px;border-radius:999px;font-size:12.5px}
+.delta.up{background:var(--good-soft);color:var(--good)}.delta.down{background:var(--bad-soft);color:var(--bad)}
+.kpi .v{font:600 30px/1.1 var(--f-display);margin-top:4px}
+.kpi .l{color:var(--ink-3);font-size:12px;font-weight:600;letter-spacing:.1em;text-transform:uppercase}
+.kpi .s{color:var(--ink-3);font-size:12.5px;margin-top:2px}
+.status{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:700;white-space:nowrap}
+.status::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.s-hire{background:var(--amber-soft);color:var(--amber-ink)}.s-avail{background:var(--good-soft);color:var(--good)}.s-booked{background:var(--surface-2);color:var(--ink-2);box-shadow:inset 0 0 0 1px var(--line)}
+.s-maint,.s-bad{background:var(--bad-soft);color:var(--bad)}.s-warn{background:var(--warn-soft);color:var(--warn)}
+.attn{display:flex;flex-direction:column;gap:10px}
+.item{display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:14px;background:var(--surface-2);position:relative;overflow:hidden;transition:transform .2s,box-shadow .2s}
+.item:hover{transform:translateX(3px);box-shadow:var(--shadow)}
+.item::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--c,var(--line))}
+.item.bad{--c:var(--bad)}.item.warn{--c:var(--amber)}.item.good{--c:var(--good)}
+.item .t{font-weight:600}.item .d{color:var(--ink-3);font-size:12.5px}
+.item .go{margin-left:auto;flex:none}
+.table{width:100%;border-collapse:collapse}
+.table th{text-align:left;font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);font-weight:600;padding:0 10px 10px}
+.table td{padding:12px 10px;border-top:1px solid var(--line);vertical-align:middle}
+.table tr{transition:background .15s}.table tbody tr:hover{background:var(--surface-2)}
+.r{text-align:right}
+.scroll{overflow-x:auto}
+.row-actions{display:flex;gap:6px;justify-content:flex-end}
+.bar{height:8px;border-radius:99px;background:var(--surface-2);overflow:hidden;box-shadow:inset 0 0 0 1px var(--line)}
+.bar i{display:block;height:100%;border-radius:99px;background:var(--amber);width:0;transition:width 1s cubic-bezier(.2,.7,.2,1)}
+.vcard{display:flex;flex-direction:column;gap:12px}
+.vcard .name{font:600 22px/1.1 var(--f-display)}
+.vcard .plate{font-size:12px;color:var(--ink-3);letter-spacing:.08em}
+.kv{display:flex;justify-content:space-between;gap:12px;color:var(--ink-2)}
+.kv b{color:var(--ink)}
+.docs{display:flex;gap:6px;flex-wrap:wrap}
+.doc{font-size:11.5px;font-weight:600;border-radius:8px;padding:2px 8px;background:var(--good-soft);color:var(--good)}
+.doc.warn{background:var(--warn-soft);color:var(--warn)}.doc.bad{background:var(--bad-soft);color:var(--bad)}
+.prose{max-width:68ch}
+.prose p{margin:0 0 14px;font-size:15px;line-height:1.7}
+.hl-g{background:var(--good-soft);color:var(--good);padding:0 5px;border-radius:5px;font-weight:600}
+.hl-r{background:var(--bad-soft);color:var(--bad);padding:0 5px;border-radius:5px;font-weight:600}
+.hl-a{background:var(--amber-soft);color:var(--amber-ink);padding:0 5px;border-radius:5px;font-weight:600}
+.todo{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-top:1px solid var(--line)}
+.todo .n{flex:none;width:24px;height:24px;border-radius:50%;background:var(--amber-soft);color:var(--amber-ink);display:grid;place-items:center;font-weight:700;font-size:12px}
+.pl td:first-child{color:var(--ink-2)}.pl .sub td{font-weight:700;background:var(--surface-2)}.pl .net td{font:600 18px var(--f-display);border-top:2px solid var(--ink)}
+svg text{fill:var(--ink-3);font:11px var(--f-ui)}
+.legend{display:flex;gap:14px;color:var(--ink-3);font-size:12px;margin-top:10px;flex-wrap:wrap}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.seg{display:flex;gap:2px;height:12px;border-radius:99px;overflow:hidden}
+.seg i{display:block;height:100%}
+
+/* sheet + toast */
+.scrim{position:fixed;inset:0;background:rgba(20,12,4,.45);backdrop-filter:blur(2px);opacity:0;pointer-events:none;transition:opacity .3s;z-index:30}
+.scrim.on{opacity:1;pointer-events:auto}
+.sheet{position:fixed;top:0;right:0;bottom:0;width:min(480px,100%);background:var(--surface);z-index:31;transform:translateX(104%);transition:transform .45s cubic-bezier(.2,.8,.2,1);padding:26px;overflow:auto;box-shadow:-20px 0 60px -20px rgba(0,0,0,.4)}
+.sheet.on{transform:none}
+.sheet h2{font:600 30px var(--f-display);margin-bottom:16px}
+.f{display:grid;gap:6px;margin-bottom:14px}.f label{font-size:12px;font-weight:600;color:var(--ink-3);letter-spacing:.08em;text-transform:uppercase}
+.f input,.f select,.f textarea{height:44px;border:1px solid var(--line);background:var(--surface-2);border-radius:12px;padding:0 12px;color:var(--ink);font:inherit;outline:none}
+.f input:focus,.f select:focus{border-color:var(--amber);box-shadow:0 0 0 3px color-mix(in srgb,var(--amber) 18%,transparent)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,30px);background:var(--ink);color:var(--bg);padding:12px 20px;border-radius:14px;font-weight:600;opacity:0;transition:all .4s cubic-bezier(.2,.8,.2,1);z-index:60;pointer-events:none}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+.menu-btn{display:none}
+.mockbadge{position:fixed;right:12px;bottom:12px;z-index:5;font-size:11px;color:var(--ink-3);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
+
+@media (max-width:1000px){
+  .hero,.g2,.g3,.g4,.g21{grid-template-columns:1fr}.g4{grid-template-columns:repeat(2,1fr)}
+  #login{grid-template-columns:1fr;grid-template-rows:240px 1fr}.scene{border-radius:0 0 32px 32px;box-shadow:0 8px 0 -2px var(--amber)}
+  .scene-copy .display,.scene-copy p{display:none}
+  #app{grid-template-columns:1fr}
+  .rail{position:fixed;z-index:40;left:0;top:0;width:260px;transform:translateX(-105%);transition:transform .35s cubic-bezier(.2,.8,.2,1)}
+  .rail.on{transform:none}
+  .menu-btn{display:inline-flex}
+  .main{padding:16px max(16px,env(safe-area-inset-left,0px)) 80px max(16px,env(safe-area-inset-left,0px))}
+}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+</style>
+
+<div id="login">
+  <div class="scene" aria-hidden="true">
+    <svg viewBox="0 0 800 700" preserveAspectRatio="xMidYMax slice">
+      <defs>
+        <radialGradient id="sg" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#fff6d6"/><stop offset=".35" stop-color="#ffd27a"/><stop offset="1" stop-color="#ffd27a" stop-opacity="0"/></radialGradient>
+      </defs>
+      <g class="sun"><circle cx="560" cy="430" r="150" fill="url(#sg)"/><circle cx="560" cy="430" r="46" fill="#fff3c9"/></g>
+      <g class="far" opacity=".55" fill="#3a1f2c">
+        <path d="M0 520h60v-70h30v70h20v-110h34v110h26v-60h30v60h40v-90h28v90h50v-50h24v50h60v-120h30v120h40v-70h30v70h50v-100h26v100h60v-60h30v60h50v-80h30v80h60v-50h26v50H800v40H0z"/>
+        <path transform="translate(800 0)" d="M0 520h60v-70h30v70h20v-110h34v110h26v-60h30v60h40v-90h28v90h50v-50h24v50h60v-120h30v120h40v-70h30v70h50v-100h26v100h60v-60h30v60h50v-80h30v80h60v-50h26v50H800v40H0z"/>
+      </g>
+      <path d="M-20 340c60-60 150-90 230-70 20-30 80-46 130-30 60-24 130-6 150 30 40 4 70 30 60 60H-20z" fill="#2a1522" opacity=".9"/>
+      <rect x="140" y="330" width="14" height="190" fill="#24121c"/>
+      <rect x="0" y="520" width="800" height="180" fill="#2a1620"/>
+      <rect x="0" y="548" width="800" height="152" fill="#1e0f17"/>
+      <g class="road-dash" fill="#f6c26b" opacity=".8"><rect x="0" y="612" width="70" height="6" rx="3"/><rect x="120" y="612" width="70" height="6" rx="3"/><rect x="240" y="612" width="70" height="6" rx="3"/><rect x="360" y="612" width="70" height="6" rx="3"/><rect x="480" y="612" width="70" height="6" rx="3"/><rect x="600" y="612" width="70" height="6" rx="3"/><rect x="720" y="612" width="70" height="6" rx="3"/><rect x="840" y="612" width="70" height="6" rx="3"/></g>
+      <g class="car">
+        <g transform="translate(250 462)">
+          <path d="M0 96 L0 62 Q0 52 12 48 L50 40 L84 6 Q90 0 100 0 L214 0 Q226 0 232 8 L262 48 L300 54 Q312 56 312 68 L312 96 Z" fill="#14100c"/>
+          <path d="M92 12 L56 44 L150 44 L150 12 Z M160 12 L160 44 L244 44 L222 12 Z" fill="#6a4a36" opacity=".85"/>
+          <rect x="96" y="-8" width="116" height="5" rx="2.5" fill="#3a2e24"/>
+          <rect x="290" y="62" width="22" height="9" rx="4" fill="#ffe2a0"/>
+          <rect x="0" y="66" width="10" height="9" rx="4" fill="#d6402c"/>
+          <rect x="120" y="70" width="56" height="12" rx="3" fill="#E08E0B"/><text x="148" y="80" text-anchor="middle" style="fill:#1b120a;font:700 9px sans-serif">ZURI</text>
+          <g transform="translate(66 98)"><circle r="25" fill="#0a0806"/><circle class="wheel" r="14" fill="#6b5c4b"/><g class="wheel" stroke="#b9a68b" stroke-width="3"><path d="M-12 0H12M0 -12V12"/></g></g>
+          <g transform="translate(246 98)"><circle r="25" fill="#0a0806"/><circle class="wheel" r="14" fill="#6b5c4b"/><g class="wheel" stroke="#b9a68b" stroke-width="3"><path d="M-12 0H12M0 -12V12"/></g></g>
+        </g>
+        <g transform="translate(236 600)"><circle class="dust" r="10" fill="#d9b684"/><circle class="dust" r="8" fill="#d9b684"/><circle class="dust" r="12" fill="#d9b684"/></g>
+      </g>
+    </svg>
+    <div class="scene-copy">
+      <div class="brand-row"><div class="emblem"><svg viewBox="0 0 24 24" fill="none" stroke="#1b120a" stroke-width="1.8" stroke-linecap="round"><path d="M12 21V8M12 8c-2-3-5-3-7-2 3 0 5 1 7 2zm0 0c2-3 5-3 7-2-3 0-5 1-7 2z"/><path d="M4 21h16"/></svg></div><div><div class="display" style="font-size:26px;margin:0;line-height:1">Zuri Tours</div><div style="font-size:11px;letter-spacing:.28em;text-transform:uppercase;opacity:.8">&amp; Car Hire</div></div></div>
+      <div class="display">Zuri Business OS</div>
+      <p>Manage. Operate. Grow.</p>
+    </div>
+  </div>
+  <div class="login-side">
+    <form class="login-card" id="loginForm">
+      <div style="display:grid;place-items:center"><div class="emblem" style="width:72px;height:72px"><svg viewBox="0 0 24 24" fill="none" stroke="#1b120a" stroke-width="1.6" stroke-linecap="round" style="width:40px;height:40px"><path d="M12 21V8M12 8c-2-3-5-3-7-2 3 0 5 1 7 2zm0 0c2-3 5-3 7-2-3 0-5 1-7 2z"/><path d="M4 21h16"/></svg></div></div>
+      <h2>Welcome back</h2>
+      <div class="sub">Sign in to continue</div>
+      <div class="field"><input id="em" type="email" placeholder="Email address" value="ray@zuritours.co.tz" autocomplete="username" aria-label="Email address"></div>
+      <div class="field"><input id="pw" type="password" placeholder="Password" value="••••••••••" autocomplete="current-password" aria-label="Password"></div>
+      <button class="btn primary big" type="submit">Sign in →</button>
+    </form>
+  </div>
+</div>
+
+<div id="app" hidden>
+  <aside class="rail" id="rail">
+    <div class="brand-row"><div class="emblem"><svg viewBox="0 0 24 24" fill="none" stroke="#1b120a" stroke-width="1.8" stroke-linecap="round"><path d="M12 21V8M12 8c-2-3-5-3-7-2 3 0 5 1 7 2zm0 0c2-3 5-3 7-2-3 0-5 1-7 2z"/><path d="M4 21h16"/></svg></div><div><b>Zuri</b><small>Business OS</small></div></div>
+    <nav class="nav" id="nav"><span class="pill" id="pill"></span></nav>
+    <div class="me"><div class="av">R</div><div><b>Ray</b><small>Owner</small></div>
+      <button class="btn sm ghost" id="theme" style="margin-left:auto;color:var(--side-ink);border-color:rgba(255,255,255,.15)" aria-label="Toggle theme">◐</button></div>
+  </aside>
+  <main class="main"><div id="view"></div></main>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="sheet" id="sheet" aria-hidden="true"></aside>
+<div class="toast" id="toast"></div>
+<div class="mockbadge">Mockup · sample data</div>
+
+<script>
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const T=n=>Math.round(n).toLocaleString('en-US');
+const M=n=>(n/1e6).toFixed(n>=1e7?1:2).replace(/\.?0+$/,'')+'M';
+const ic={
+ dash:'<path d="M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 8h6V4h-6z"/>',
+ book:'<path d="M5 4h11a3 3 0 013 3v13H8a3 3 0 01-3-3zM5 17a3 3 0 013-3h11"/>',
+ car:'<path d="M3 15v-3l2-5h14l2 5v3M3 15h18M3 15v3h3v-3M18 15v3h3v-3M7 12h10"/>',
+ user:'<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/>',
+ shield:'<path d="M12 3l8 3v6c0 4.5-3.3 8-8 9-4.7-1-8-4.5-8-9V6zM9 12l2 2 4-4"/>',
+ coin:'<circle cx="12" cy="12" r="9"/><path d="M9 9.5c0-1.4 1.3-2 3-2s3 .6 3 2-1.3 1.8-3 2.2-3 .8-3 2.3 1.3 2 3 2 3-.6 3-2M12 6v1.5M12 16.5V18"/>',
+ doc:'<path d="M7 3h7l4 4v14H7zM14 3v4h4M10 12h5M10 16h5"/>',
+ trend:'<path d="M3 17l6-6 4 4 8-9M15 6h6v6"/>',
+ users:'<circle cx="9" cy="8" r="3.5"/><circle cx="17" cy="9" r="2.5"/><path d="M2 20c1-4 3.5-6 7-6s6 2 7 6M16 15c3 0 5 1.6 6 5"/>',
+ gear:'<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 00-.1-1.2l2-1.5-2-3.4-2.3 1a7 7 0 00-2-1.2L14 3h-4l-.6 2.7a7 7 0 00-2 1.2l-2.3-1-2 3.4 2 1.5A7 7 0 005 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.4 2.3-1a7 7 0 002 1.2L10 21h4l.6-2.7a7 7 0 002-1.2l2.3 1 2-3.4-2-1.5c.1-.4.1-.8.1-1.2z"/>'
+};
+const ICON=k=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ic[k]}</svg>`;
+const NAV=[['dashboard','Dashboard','dash',3],['bookings','Bookings','book'],['fleet','Fleet','car'],['drivers','Drivers','user'],['compliance','Compliance','shield',2],['finance','Finance','coin'],['reports','Reports','doc'],['growth','Growth','trend'],['users','Users','users'],['settings','Settings','gear']];
+
+/* ---------- sample data ---------- */
+const V=[
+ {n:'Toyota Land Cruiser V8',p:'T 482 EFK',s:'hire',rev:5200000,cost:1100000,util:84,d:'Juma Rashidi',docs:[['Insurance','ok','Mar 2027'],['Road licence','ok','Jan 2027'],['TRA sticker','warn','21 days']]},
+ {n:'Toyota Prado TX',p:'T 215 DNB',s:'avail',rev:3900000,cost:900000,util:68,d:'Hamisi Bakari',docs:[['Insurance','ok','Feb 2027'],['Road licence','ok','Dec 2026'],['Service','warn','9 days']]},
+ {n:'Toyota Hiace',p:'T 733 CZH',s:'booked',rev:3100000,cost:1200000,util:58,d:'Baraka Mushi',docs:[['Insurance','bad','6 days'],['Road licence','ok','Apr 2027'],['TRA sticker','ok','Aug 2027']]},
+ {n:'Toyota Coaster',p:'T 901 DDP',s:'avail',rev:4400000,cost:1700000,util:47,d:'Salum Mtui',docs:[['Insurance','ok','Jun 2027'],['Operating licence','warn','27 days'],['Road licence','ok','May 2027']]},
+ {n:'Land Cruiser Hardtop',p:'T 358 CWR',s:'maint',rev:2040000,cost:520000,util:40,d:'Mussa Kombo',docs:[['Insurance','ok','Oct 2027'],['Road licence','ok','Mar 2027'],['Service','bad','In workshop']]}
+];
+const ST={hire:['On hire','s-hire'],avail:['Available','s-avail'],booked:['Booked','s-booked'],maint:['Maintenance','s-maint']};
+const B=[
+ ['ZT-0431','Serengeti Trails Ltd','Safari · 5 days','Fri 20 Nov → Tue 24 Nov','Toyota Hiace · Baraka M.',4200000,'booked','—'],
+ ['ZT-0430','Ubungo Plaza Hotel','Airport transfers','Mon 16 Nov → Fri 20 Nov','Prado TX · Hamisi B.',1650000,'hire','—'],
+ ['ZT-0429','Dr. A. Mwakyusa','Wedding · VIP','Sat 14 Nov','Land Cruiser V8 · Juma R.',900000,'done','Awaiting invoice'],
+ ['ZT-0427','NIT Dar es Salaam','Staff transport','Mon 9 Nov → Fri 13 Nov','Coaster · Salum M.',3800000,'done','INV-2611 · 8 days'],
+ ['ZT-0424','Kilimanjaro Ridge Co.','Safari · 7 days','Sun 1 Nov → Sat 7 Nov','V8 + Hardtop',6400000,'done','INV-2604 · 14 days'],
+ ['ZT-0418','Tanga Cement Ltd','Executive transport','Thu 29 Oct','Land Cruiser V8 · Juma R.',750000,'paid','Paid 2 Nov'],
+ ['ZT-0415','Mama Neema Events','Wedding · VIP','Sat 24 Oct','Prado TX · Hamisi B.',1100000,'paid','Paid 26 Oct']
+];
+const BST={booked:['Booked','s-booked'],hire:['On hire','s-hire'],done:['Ended','s-warn'],paid:['Paid','s-avail']};
+
+/* ---------- charts ---------- */
+function bars(vals,labels,opts={}){
+  const W=520,H=200,pl=44,pb=26,pt=12,max=Math.max(...vals)*1.15,bw=(W-pl)/vals.length;
+  let g='';
+  [0,.5,1].forEach(f=>{const y=pt+(H-pt-pb)*(1-f);g+=`<line x1="${pl}" x2="${W}" y1="${y}" y2="${y}" stroke="var(--line)"/><text x="${pl-8}" y="${y+4}" text-anchor="end">${M(max/1.15*f)}</text>`});
+  vals.forEach((v,i)=>{const h=(H-pt-pb)*v/max,x=pl+i*bw+bw*.2,y=H-pb-h,soft=opts.softLast&&i===vals.length-1;
+    g+=`<rect x="${x}" y="${H-pb}" width="${bw*.6}" height="0" rx="6" fill="${soft?'url(#hatch)':'var(--amber)'}" stroke="${soft?'var(--amber)':'none'}"><animate attributeName="height" from="0" to="${h}" dur=".8s" begin="0s" fill="freeze" calcMode="spline" keySplines=".2 .7 .2 1" keyTimes="0;1"/><animate attributeName="y" from="${H-pb}" to="${y}" dur=".8s" fill="freeze" calcMode="spline" keySplines=".2 .7 .2 1" keyTimes="0;1"/></rect>
+    <text x="${x+bw*.3}" y="${y-6}" text-anchor="middle" style="fill:var(--ink);font-weight:700">${M(v)}</text><text x="${x+bw*.3}" y="${H-8}" text-anchor="middle">${labels[i]}</text>`});
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Profit by month"><defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="var(--amber-soft)"/><line x1="0" y1="0" x2="0" y2="6" stroke="var(--amber)" stroke-width="2"/></pattern></defs>${g}</svg>`;
+}
+function area(vals,days,color='var(--amber)'){
+  const W=620,H=210,pl=44,pb=24,pt=12,max=Math.max(...vals)*1.1;
+  const X=i=>pl+(W-pl-8)*i/(vals.length-1),Y=v=>pt+(H-pt-pb)*(1-v/max);
+  const pts=vals.map((v,i)=>`${X(i)},${Y(v)}`);let g='';
+  [0,.5,1].forEach(f=>{const y=pt+(H-pt-pb)*(1-f);g+=`<line x1="${pl}" x2="${W}" y1="${y}" y2="${y}" stroke="var(--line)"/><text x="${pl-8}" y="${y+4}" text-anchor="end">${M(max/1.1*f)}</text>`});
+  [0,Math.floor(vals.length/2),vals.length-1].forEach(i=>g+=`<text x="${X(i)}" y="${H-6}" text-anchor="${i===vals.length-1?'end':i===0?'start':'middle'}">${days[i]}</text>`);
+  const last=vals.length-1;
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Cash in the month"><defs><linearGradient id="af" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".35"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>${g}<path d="M${X(0)},${H-pb} L${pts.join(' L')} L${X(last)},${H-pb}Z" fill="url(#af)"/><path d="M${pts.join(' L')}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" pathLength="1" style="stroke-dasharray:1;stroke-dashoffset:1;animation:draw 1.4s .1s cubic-bezier(.2,.7,.2,1) forwards"/><circle cx="${X(last)}" cy="${Y(vals[last])}" r="5" fill="${color}" stroke="var(--surface)" stroke-width="2"/></svg>`;
+}
+const cash=(()=>{let a=0;return Array.from({length:19},(_,i)=>{a+=[0,420,0,1150,380,0,0,2300,640,900,0,1800,460,0,1450,2700,3100,0,1500][i]*1000;return a})})();
+const dayLbl=Array.from({length:19},(_,i)=>`${i+1} Nov`);
+
+/* ---------- pages ---------- */
+const head=(t,sub,chips)=>`<div class="top"><div style="display:flex;gap:12px;align-items:flex-end"><button class="btn menu-btn" id="menu" aria-label="Menu">☰</button><div><h1>${t}</h1>${sub?`<div class="sub">${sub}</div>`:''}</div></div>${chips?`<div class="chips">${['This month','This week','Last month','Custom'].map((c,i)=>`<button class="chip ${i===0?'on':''}">${c}</button>`).join('')}</div>`:''}</div>`;
+const item=(c,t,d,a)=>`<div class="item ${c}"><div><div class="t">${t}</div><div class="d">${d}</div></div>${a?`<button class="btn sm go" data-toast="${a} — opens the booking">${a}</button>`:''}</div>`;
+const net=V.reduce((s,v)=>s+v.rev-v.cost,0);
+
+const pages={
+dashboard:()=>`${head('Good morning, Ray','Thursday 19 November',true)}
+<div class="hero stag">
+ <div class="card" style="--i:0"><div class="lab">Profit this month</div><div class="big num" data-count="8840000">0</div>
+  <span class="delta up">▲ 49% <span style="font-weight:500">vs same days in October</span></span>
+  <div style="margin-top:18px" class="grid g3">
+   <div class="kpi"><div class="l">Revenue</div><div class="v num" data-count="18640000">0</div></div>
+   <div class="kpi"><div class="l">Trip costs</div><div class="v num" data-count="5420000">0</div></div>
+   <div class="kpi"><div class="l">Company costs</div><div class="v num" data-count="4380000">0</div></div></div></div>
+ <div class="card" style="--i:1"><h3>Cash in this month</h3>${area(cash,dayLbl)}</div>
+</div>
+<div class="grid g2 stag">
+ <div class="card" style="--i:2"><h3>Needs your attention <span style="float:right;letter-spacing:0;text-transform:none">5 items</span></h3><div class="attn">
+  ${item('bad','ZT-0424 · Kilimanjaro Ridge unpaid 14 days','Invoice INV-2604 · TZS 6,400,000','Record payment')}
+  ${item('bad','Toyota Hiace insurance expires in 6 days','T 733 CZH · booked from Friday','Open fleet')}
+  ${item('warn','ZT-0431 starts tomorrow 07:00 with no driver','Serengeti Trails · Hiace','Assign driver')}
+  ${item('warn','ZT-0429 ended 5 days ago, not invoiced','Dr. A. Mwakyusa · TZS 900,000','Create invoice')}
+  ${item('good','Prado TX service due in 9 days','Last done 5 Aug · 4,980 km since','Schedule')}
+ </div></div>
+ <div class="grid" style="align-content:start">
+  <div class="card" style="--i:3"><h3>Fleet today</h3>${V.map(v=>`<div class="kv" style="padding:8px 0;border-top:1px solid var(--line)"><span><b>${v.n}</b><br><span class="plate" style="font-size:12px;color:var(--ink-3)">${v.p}</span></span><span class="status ${ST[v.s][1]}" style="align-self:center">${ST[v.s][0]}</span></div>`).join('')}</div>
+  <div class="card" style="--i:4"><h3>Money owed to you</h3><div class="big display num" style="font-size:38px;font-weight:600" data-count="10300000">0</div>
+   <div class="seg" style="margin:10px 0 8px"><i style="width:40%;background:var(--good)"></i><i style="width:49%;background:var(--amber)"></i><i style="width:11%;background:var(--bad)"></i></div>
+   <div class="legend"><span><i style="background:var(--good)"></i>0–7 days 4.1M</span><span><i style="background:var(--amber)"></i>8–30 days 5.0M</span><span><i style="background:var(--bad)"></i>30+ days 1.2M</span></div></div>
+ </div>
+</div>`,
+
+bookings:()=>`${head('Bookings','7 jobs · 2 active now')}
+<div class="chips" style="margin-bottom:14px">${['All','Booked','On hire','To invoice','Unpaid','Paid'].map((c,i)=>`<button class="chip ${i===0?'on':''}" data-chip>${c}</button>`).join('')}<button class="btn primary sm" style="margin-left:auto" id="newb">+ New booking</button></div>
+<div class="card scroll stag" style="padding:10px 14px"><table class="table"><thead><tr><th>Booking</th><th>Service</th><th>Dates</th><th>Vehicles</th><th class="r">Amount</th><th>Status</th><th>Invoice</th><th></th></tr></thead><tbody>
+${B.map(b=>`<tr><td><b>${b[0]}</b><br><span style="color:var(--ink-3)">${b[1]}</span></td><td>${b[2]}</td><td>${b[3]}</td><td>${b[4]}</td><td class="r num"><b>${T(b[5])}</b></td><td><span class="status ${BST[b[6]][1]}">${BST[b[6]][0]}</span></td><td style="color:var(--ink-2)">${b[7]}</td>
+<td><div class="row-actions"><button class="btn sm" data-toast="Opens Edit">Edit</button><button class="btn sm" data-toast="Invoice & delivery note ready to print">Print</button><button class="btn sm danger" data-del>Delete</button></div></td></tr>`).join('')}
+</tbody></table></div>`,
+
+fleet:()=>`${head('Fleet','5 vehicles · 1 in maintenance')}
+<div class="grid g3 stag">${V.map((v,i)=>`<div class="card vcard" style="--i:${i}">
+ <div style="display:flex;justify-content:space-between;gap:8px"><div><div class="name">${v.n}</div><div class="plate">${v.p}</div></div><span class="status ${ST[v.s][1]}" style="align-self:flex-start">${ST[v.s][0]}</span></div>
+ <div><div class="kv"><span>Used this month</span><b>${v.util}%</b></div><div class="bar" style="margin-top:6px"><i data-w="${v.util}"></i></div></div>
+ <div class="kv"><span>Profit this month</span><b class="num">${T(v.rev-v.cost)}</b></div>
+ <div class="docs">${v.docs.map(d=>`<span class="doc ${d[1]==='ok'?'':d[1]}">${d[0]} · ${d[2]}</span>`).join('')}</div>
+ <div class="row-actions" style="justify-content:flex-start"><button class="btn sm" data-toast="Opens Edit">Edit</button><button class="btn sm danger" data-del>Delete</button></div></div>`).join('')}</div>`,
+
+drivers:()=>`${head('Drivers','5 drivers · 1 on trip')}
+<div class="card scroll stag" style="padding:10px 14px"><table class="table"><thead><tr><th>Driver</th><th>Status</th><th>Licence</th><th>PSV badge</th><th class="r">Trips this month</th><th></th></tr></thead><tbody>
+${[['Juma Rashidi','On duty','s-hire','Aug 2028','Mar 2027',9],['Hamisi Bakari','Available','s-avail','Jun 2027','Jun 2027',7],['Baraka Mushi','Booked','s-booked','Nov 2026 (3 days)','Feb 2027',5],['Salum Mtui','Available','s-avail','Oct 2027','Sep 2027',4],['Mussa Kombo','On leave','s-warn','May 2028','Dec 2026',3]].map(d=>`<tr><td><b>${d[0]}</b></td><td><span class="status ${d[2]}">${d[1]}</span></td><td>${d[3]}</td><td>${d[4]}</td><td class="r num">${d[5]}</td><td><div class="row-actions"><button class="btn sm" data-toast="Opens Edit">Edit</button><button class="btn sm danger" data-del>Delete</button></div></td></tr>`).join('')}
+</tbody></table></div>`,
+
+compliance:()=>`${head('Compliance','Everything that expires, nearest first')}
+<div class="card stag" style="max-width:820px">${[['bad','Hiace T 733 CZH','Insurance',6],['bad','Hardtop T 358 CWR','Service (in workshop)',0],['warn','Hiace T 733 CZH','TRA sticker check',14],['warn','Land Cruiser V8','TRA sticker',21],['warn','Coaster T 901 DDP','Operating licence',27],['warn','Baraka Mushi','Driving licence',3],['good','Prado TX','Road licence',41],['good','Mussa Kombo','PSV badge',43]].map((r,i)=>`<div class="item ${r[0]}" style="margin-bottom:10px;--i:${i}"><div><div class="t">${r[1]}</div><div class="d">${r[2]}</div></div><span class="status ${r[0]==='bad'?'s-bad':r[0]==='warn'?'s-warn':'s-avail'} go">${r[3]===0?'Now':r[3]+' days'}</span></div>`).join('')}</div>`,
+
+finance:()=>`${head('Finance','Money in, money out, money owed',true)}
+<div class="grid g3 stag" style="margin-bottom:16px">
+ <div class="card kpi" style="--i:0"><div class="l">Received</div><div class="v num" data-count="14600000">0</div><div class="s">12 payments</div></div>
+ <div class="card kpi" style="--i:1"><div class="l">Spent</div><div class="v num" data-count="9800000">0</div><div class="s">Trip 5.42M · Company 4.38M</div></div>
+ <div class="card kpi" style="--i:2"><div class="l">Still owed to you</div><div class="v num" data-count="10300000">0</div><div class="s">5 invoices</div></div></div>
+<div class="grid g21 stag">
+ <div class="card" style="--i:3"><h3>Trip costs · TZS 5.42M</h3>${[['Fuel',2900000],['Driver allowance',1800000],['Borrowed car payouts',420000],['Emergency',300000]].map(r=>`<div class="kv" style="padding:8px 0;border-top:1px solid var(--line)"><span>${r[0]}</span><b class="num">${T(r[1])}</b></div>`).join('')}</div>
+ <div class="card" style="--i:4"><h3>Company costs · TZS 4.38M</h3>${[['Salaries',2200000],['Rent',900000],['Insurance & licences',780000],['Marketing',250000],['Other',250000]].map(r=>`<div class="kv" style="padding:8px 0;border-top:1px solid var(--line)"><span>${r[0]}</span><b class="num">${T(r[1])}</b></div>`).join('')}<div class="row-actions" style="justify-content:flex-start;margin-top:12px"><button class="btn sm" data-toast="Opens Add expense">+ Add expense</button></div></div>
+</div>`,
+
+reports:()=>`${head('Reports','Written for the owner, saved as documents',true)}
+<div class="grid g2 stag">
+ <div class="card" style="--i:0"><h3>November so far</h3><div class="prose">
+  <p>You earned <span class="hl-g">TZS 18.64M</span> from 14 jobs, <b>up 17%</b> on the same days in October (15.90M). After trip and company costs your profit is <span class="hl-g">TZS 8.84M</span>, a 47% margin, <b>10 points better</b> than October's 37%.</p>
+  <p>The Land Cruiser V8 carried the month: it earned <span class="hl-a">TZS 4.1M profit</span> and worked 16 of 19 days. The Coaster is the weak spot. It earned 4.4M but cost 1.7M to run, and it has been used on only 47% of days.</p>
+  <p>Money is the risk. <span class="hl-r">TZS 10.3M is still unpaid</span>, and 1.2M of it is more than 30 days old. At this pace November closes near <b>TZS 14M profit</b>, provided the unpaid invoices are collected.</p>
+  <div style="margin-top:6px"><b>What to do</b>
+   <div class="todo"><span class="n">1</span><span>Collect INV-2604 (Kilimanjaro Ridge, 6.4M) and INV-2611 (NIT, 3.8M) this week.</span></div>
+   <div class="todo"><span class="n">2</span><span>Renew the Hiace insurance before Friday's safari. It leaves on the 20th.</span></div>
+   <div class="todo"><span class="n">3</span><span>Offer the Coaster to schools and staff-transport clients. It is idle 5 days out of 10.</span></div></div></div>
+  <div class="row-actions" style="justify-content:flex-start;margin-top:16px"><button class="btn primary sm" data-toast="Saved as 'November 2026 (to 19 Nov)'">Save as document</button><button class="btn sm" data-toast="PDF ready">Download PDF</button><button class="btn sm" data-toast="Excel ready">Excel</button></div></div>
+ <div class="grid" style="align-content:start">
+  <div class="card" style="--i:1"><h3>Profit &amp; loss</h3><table class="table pl"><tbody>
+   <tr><td>Revenue</td><td class="r num">18,640,000</td></tr><tr><td>Trip costs</td><td class="r num">−5,420,000</td></tr>
+   <tr class="sub"><td>Gross profit</td><td class="r num">13,220,000</td></tr><tr><td>Company costs</td><td class="r num">−4,380,000</td></tr>
+   <tr class="net"><td>Net profit</td><td class="r num">8,840,000</td></tr></tbody></table></div>
+  <div class="card" style="--i:2"><h3>Saved reports</h3>${['October 2026','September 2026','Quarter 3 2026'].map(r=>`<div class="kv" style="padding:9px 0;border-top:1px solid var(--line)"><b>${r}</b><span><button class="btn sm" data-toast="Opens report">Open</button></span></div>`).join('')}</div>
+ </div></div>`,
+
+growth:()=>`${head('Growth','Where the business is heading')}
+<div class="card stag" style="margin-bottom:16px;background:linear-gradient(135deg,var(--good-soft),var(--surface) 60%)"><div style="display:flex;gap:28px;flex-wrap:wrap;justify-content:space-between;align-items:flex-end">
+ <div><div class="lab" style="color:var(--ink-3);font-weight:600;font-size:12px;letter-spacing:.14em;text-transform:uppercase">Direction</div><div class="display" style="font-size:46px;color:var(--good);font-weight:600;line-height:1.1">▲ Growing</div><div style="color:var(--ink-2)">Profit rose in 3 of the last 4 months.</div></div>
+ <div style="text-align:right"><div class="lab" style="color:var(--ink-3);font-weight:600;font-size:12px;letter-spacing:.14em;text-transform:uppercase">Forecast for November</div><div class="display num" style="font-size:36px;font-weight:600">TZS 14.0M</div><div style="color:var(--ink-3)">if the current pace holds</div></div></div></div>
+<div class="grid g2 stag">
+ <div class="card" style="--i:1"><h3>Profit by month</h3>${bars([3100000,4000000,3600000,5200000,9100000,8840000],['Jun','Jul','Aug','Sep','Oct','Nov*'],{softLast:true})}<div class="legend"><span>* Nov to date, 19 of 30 days</span></div></div>
+ <div class="card" style="--i:2"><h3>This week vs a usual week</h3><div class="display num" style="font-size:40px;font-weight:600">TZS 4.9M</div><div style="color:var(--ink-3)">usual by Thursday: 4.2M</div><div class="bar" style="margin:14px 0 10px"><i data-w="100" style="background:var(--good)"></i></div><span class="delta up">▲ 17% ahead</span>
+ <div style="margin-top:20px"><h3>Customers</h3><div class="kv" style="padding:6px 0"><span>Came back this month</span><b>6 of 11</b></div><div class="kv" style="padding:6px 0;border-top:1px solid var(--line)"><span>Biggest customer</span><b>Serengeti Trails · 24%</b></div></div></div>
+</div>
+<div class="card stag" style="margin-top:16px"><h3>Which vehicles earn their keep</h3>
+ <div style="display:grid;gap:14px">${[...V].sort((a,b)=>(b.rev-b.cost)-(a.rev-a.cost)).map((v,i)=>{const p=v.rev-v.cost,m=Math.round(p/v.rev*100);return `<div style="--i:${i}"><div class="kv"><span><b>${v.n}</b> <span style="color:var(--ink-3)">${v.p}</span></span><span><b class="num">${T(p)}</b> <span style="color:var(--ink-3)">· ${m}% margin · used ${v.util}%</span></span></div><div class="bar" style="margin-top:6px"><i data-w="${Math.round(p/4100000*100)}"></i></div></div>`}).join('')}</div>
+ <div class="item warn" style="margin-top:16px"><div><div class="t">Coaster: highest cost, lowest use</div><div class="d">To reach a 40% margin at today's cost, quote about TZS 540,000 a day instead of 460,000.</div></div></div></div>`,
+
+users:()=>`${head('Users','3 accounts')}
+<div class="card scroll stag" style="padding:10px 14px"><table class="table"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Last seen</th><th></th></tr></thead><tbody>
+${[['Ray','ray@zuritours.co.tz','Owner','Now'],['Mo','mo@zuritours.co.tz','Staff','Today 09:12'],['Jonas','jonas@zuritours.co.tz','Staff','Yesterday']].map(u=>`<tr><td><b>${u[0]}</b></td><td>${u[1]}</td><td><span class="status s-booked">${u[2]}</span></td><td>${u[3]}</td><td><div class="row-actions"><button class="btn sm" data-toast="Opens Edit">Edit</button><button class="btn sm" data-toast="Reset link shown">Reset password</button>${u[2]==='Owner'?'':'<button class="btn sm danger" data-del>Delete</button>'}</div></td></tr>`).join('')}</tbody></table></div>
+<div class="card" style="margin-top:16px;max-width:820px"><h3>Recent activity</h3>${[['Mo','Created booking ZT-0431','09:12'],['Jonas','Recorded invoice INV-2611','Yesterday'],['Ray','Edited expense Rent','Yesterday'],['Mo','Changed vehicle status Hardtop → Maintenance','Mon']].map(a=>`<div class="kv" style="padding:8px 0;border-top:1px solid var(--line)"><span><b>${a[0]}</b> · ${a[1]}</span><span style="color:var(--ink-3)">${a[2]}</span></div>`).join('')}</div>`,
+
+settings:()=>`${head('Settings')}
+<div class="grid g21 stag">
+ <div class="card" style="--i:0"><h3>Business</h3><div class="f"><label for="s1">Company</label><input id="s1" value="Zuri Tours &amp; Car Hire"></div><div class="f"><label for="s2">Target margin</label><input id="s2" value="40%"></div><div class="f"><label for="s3">Invoice prefix</label><input id="s3" value="INV-"></div><button class="btn primary sm" data-toast="Saved">Save</button></div>
+ <div class="card" style="--i:1"><h3>My password</h3><div class="f"><label for="p1">Current</label><input id="p1" type="password"></div><div class="f"><label for="p2">New</label><input id="p2" type="password"></div><button class="btn primary sm" data-toast="Password changed">Change password</button></div>
+</div>`
+};
+
+/* ---------- shell ---------- */
+const nav=$('#nav');
+NAV.forEach(([id,label,i,b])=>{nav.insertAdjacentHTML('beforeend',`<a href="#${id}" data-id="${id}">${ICON(i)}<span>${label}</span>${b?`<span class="badge">${b}</span>`:''}</a>`)});
+function movePill(){const a=$('.nav a.on');if(!a)return;const p=$('#pill');p.style.transform=`translateY(${a.offsetTop}px)`;p.style.height=a.offsetHeight+'px'}
+function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.remove('on'),2200)}
+function countUp(){$$('[data-count]').forEach(el=>{const to=+el.dataset.count,t0=performance.now(),d=1100;const step=n=>{const k=Math.min(1,(n-t0)/d),e=1-Math.pow(1-k,3);el.textContent=T(to*e);if(k<1)requestAnimationFrame(step)};requestAnimationFrame(step)})}
+function render(){
+  const id=(location.hash||'#dashboard').slice(1),pg=pages[id]?id:'dashboard';
+  $$('.nav a').forEach(a=>a.classList.toggle('on',a.dataset.id===pg));
+  const v=$('#view');v.style.animation='none';v.offsetHeight;v.style.animation='';
+  v.innerHTML=pages[pg]();movePill();countUp();
+  requestAnimationFrame(()=>$$('[data-w]').forEach(el=>el.style.width=el.dataset.w+'%'));
+  $('#rail').classList.remove('on');scrollTo(0,0);
+}
+addEventListener('hashchange',render);addEventListener('resize',movePill);
+document.fonts&&document.fonts.ready.then(movePill);
+
+/* sheet */
+function openSheet(html){const s=$('#sheet');s.innerHTML=html;s.classList.add('on');$('#scrim').classList.add('on');s.setAttribute('aria-hidden','false')}
+function closeSheet(){$('#sheet').classList.remove('on');$('#scrim').classList.remove('on');$('#sheet').setAttribute('aria-hidden','true')}
+$('#scrim').onclick=closeSheet;
+addEventListener('keydown',e=>{if(e.key==='Escape')closeSheet()});
+const newBooking=()=>`<h2>New booking</h2>
+<div class="f"><label for="n1">Customer</label><input id="n1" placeholder="Name or company"></div>
+<div class="two"><div class="f"><label for="n2">Pickup</label><input id="n2" value="Fri 20 Nov, 07:00"></div><div class="f"><label for="n3">Return</label><input id="n3" placeholder="Optional"></div></div>
+<div class="f"><label for="n4">Service</label><select id="n4"><option>Safari</option><option>Airport transfer</option><option>Wedding · VIP</option><option>Staff transport</option></select></div>
+<div class="f"><label for="n5">Vehicle</label><select id="n5"><option>Toyota Prado TX · Available</option><option>Toyota Coaster · Available</option><option>Land Cruiser V8 · On hire until Sun</option></select></div>
+<div class="f"><label for="n6">Driver</label><select id="n6"><option>Hamisi Bakari · Available</option><option>Salum Mtui · Available</option></select></div>
+<div class="item good" style="margin-bottom:14px"><div><div class="t">No clashes</div><div class="d">Prado and Hamisi are free for these dates.</div></div></div>
+<div style="display:flex;gap:10px"><button class="btn primary" id="saveb" style="flex:1">Save booking</button><button class="btn ghost" id="cancelb">Cancel</button></div>`;
+const confirmDel=()=>`<h2>Delete this record?</h2><p style="color:var(--ink-2)">This also removes its invoices and trip costs. It cannot be undone.</p><div style="display:flex;gap:10px;margin-top:18px"><button class="btn danger" id="yesdel" style="flex:1">Delete</button><button class="btn ghost" id="cancelb">Keep it</button></div>`;
+document.addEventListener('click',e=>{
+  const t=e.target.closest('button,a');if(!t)return;
+  if(t.id==='newb')openSheet(newBooking());
+  else if(t.id==='saveb'){closeSheet();toast('Booking saved')}
+  else if(t.id==='cancelb')closeSheet();
+  else if(t.hasAttribute('data-del'))openSheet(confirmDel());
+  else if(t.id==='yesdel'){closeSheet();toast('Deleted')}
+  else if(t.dataset.toast)toast(t.dataset.toast);
+  else if(t.hasAttribute('data-chip')){$$('[data-chip]').forEach(c=>c.classList.remove('on'));t.classList.add('on')}
+  else if(t.classList.contains('chip')){t.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));t.classList.add('on')}
+  else if(t.id==='menu')$('#rail').classList.toggle('on');
+  else if(t.id==='theme'){const r=document.documentElement,dark=getComputedStyle(r).colorScheme.includes('dark');r.setAttribute('data-theme',dark?'light':'dark')}
+});
+$('#loginForm').addEventListener('submit',e=>{e.preventDefault();$('#login').classList.add('out');$('#app').hidden=false;if(!location.hash)location.hash='#dashboard';render();setTimeout(()=>{$('#login').style.display='none'},700)});
+if(location.hash&&location.hash!=='#login'){ }
+const st=document.createElement('style');st.textContent='@keyframes draw{to{stroke-dashoffset:0}}';document.head.appendChild(st);
+</script>

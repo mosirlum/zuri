@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { Plus, Edit, Trash2 } from "lucide-react";
+import ActivityFeed from "@/components/ActivityFeed";
 
 interface AppUser {
   id: number;
@@ -312,6 +313,8 @@ export default function UsersPage() {
           </div>
         </div>
       )}
+
+      <ActivityFeed />
 
       {showForm && (
         <UserForm
