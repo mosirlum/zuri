@@ -1,307 +1,185 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { signIn } from "next-auth/react";
 
-const AMBER = "#E08E0B";
+// Login for Zuri Tours & Car Hire. Layout and styles live in ./login.css and
+// match the approved design; everything is scoped under .zl so nothing leaks
+// into the rest of the app.
 
-function Icon({ d, className = "w-5 h-5" }: { d: string; className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
-      <path d={d} />
-    </svg>
-  );
-}
+const KEY = "zuri-remember-email";
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const ICONS = {
-  mail: "M3 7l9 6 9-6M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1z",
-  lock: "M7 11V8a5 5 0 0110 0v3M6 11h12a1 1 0 011 1v8a1 1 0 01-1 1H6a1 1 0 01-1-1v-8a1 1 0 011-1z",
-  eye: "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 100-6 3 3 0 000 6z",
-  eyeOff: "M3 3l18 18M10.6 6.1A9.7 9.7 0 0112 6c6.4 0 10 6 10 6a17 17 0 01-3.2 3.9M6.6 6.6A17 17 0 002 12s3.6 6 10 6c1.5 0 2.8-.3 4-.8M9.9 9.9a3 3 0 004.2 4.2",
-  shield: "M12 3l8 3v6c0 4.5-3.3 8-8 9-4.7-1-8-4.5-8-9V6l8-3zM9 12l2 2 4-4",
-  gauge: "M4 17a8 8 0 1116 0M12 17l4-5M7 17h.01M17 17h.01M12 9v.01",
-  handshake: "M3 12l4-4 4 1 3-2 5 4-5 6-3-1-2 2-6-6zM3 12l3 3",
-  arrow: "M5 12h14M13 6l6 6-6 6",
-};
-
-const FEATURES = [
-  { icon: ICONS.shield, title: "Secure access", sub: "Your data, our priority" },
-  { icon: ICONS.gauge, title: "Better operations", sub: "Drive efficiency" },
-  { icon: ICONS.handshake, title: "Stronger service", sub: "For our clients" },
-];
-
-// A small scene for the brand panel: a safari vehicle driving into a sunset.
-// Pure SVG and CSS, no image to load, and it stops moving for anyone who has
-// asked their device to reduce motion.
-function LoginScene() {
-  return (
-    <div className="absolute inset-0" aria-hidden="true" style={{ background: "linear-gradient(180deg,#2b1a3a 0%,#7a3b4a 38%,#e98a2e 70%,#f6c26b 100%)" }}>
-      <style>{`
-        @keyframes zs-sun { from { transform: translateY(6px); } to { transform: translateY(-6px); } }
-        @keyframes zs-dash { to { transform: translateX(-120px); } }
-        @keyframes zs-bob { 50% { transform: translateY(-2.5px); } }
-        @keyframes zs-spin { to { transform: rotate(360deg); } }
-        @keyframes zs-far { to { transform: translateX(-800px); } }
-        @keyframes zs-dust { 0% { opacity: .5; transform: translate(0,0) scale(.6); } 100% { opacity: 0; transform: translate(-60px,-12px) scale(1.6); } }
-        .zs-sun { animation: zs-sun 9s ease-in-out infinite alternate; }
-        .zs-dash { animation: zs-dash 1.1s linear infinite; }
-        .zs-car { animation: zs-bob 1.4s ease-in-out infinite; }
-        .zs-wheel { animation: zs-spin .55s linear infinite; transform-box: fill-box; transform-origin: center; }
-        .zs-far { animation: zs-far 90s linear infinite; }
-        .zs-dust { animation: zs-dust 1.6s ease-out infinite; opacity: 0; }
-        @media (prefers-reduced-motion: reduce) { .zs-sun,.zs-dash,.zs-car,.zs-wheel,.zs-far,.zs-dust { animation: none; } .zs-dust { opacity: .25; } }
-      `}</style>
-      <svg viewBox="0 0 800 700" preserveAspectRatio="xMidYMax slice" className="absolute inset-0 h-full w-full">
-        <defs>
-          <radialGradient id="zs-sg" cx="50%" cy="50%" r="50%">
-            <stop offset="0" stopColor="#fff6d6" /><stop offset=".35" stopColor="#ffd27a" /><stop offset="1" stopColor="#ffd27a" stopOpacity="0" />
-          </radialGradient>
-        </defs>
-        <g className="zs-sun"><circle cx="560" cy="430" r="150" fill="url(#zs-sg)" /><circle cx="560" cy="430" r="46" fill="#fff3c9" /></g>
-        <g className="zs-far" opacity=".55" fill="#3a1f2c">
-          <path id="zs-sky" d="M0 520h60v-70h30v70h20v-110h34v110h26v-60h30v60h40v-90h28v90h50v-50h24v50h60v-120h30v120h40v-70h30v70h50v-100h26v100h60v-60h30v60h50v-80h30v80h60v-50h26v50H800v40H0z" />
-          <path transform="translate(800 0)" d="M0 520h60v-70h30v70h20v-110h34v110h26v-60h30v60h40v-90h28v90h50v-50h24v50h60v-120h30v120h40v-70h30v70h50v-100h26v100h60v-60h30v60h50v-80h30v80h60v-50h26v50H800v40H0z" />
-          <path transform="translate(-800 0)" d="M0 520h60v-70h30v70h20v-110h34v110h26v-60h30v60h40v-90h28v90h50v-50h24v50h60v-120h30v120h40v-70h30v70h50v-100h26v100h60v-60h30v60h50v-80h30v80h60v-50h26v50H800v40H0z" />
-        </g>
-        <path d="M-20 340c60-60 150-90 230-70 20-30 80-46 130-30 60-24 130-6 150 30 40 4 70 30 60 60H-20z" fill="#2a1522" opacity=".9" />
-        <rect x="140" y="330" width="14" height="190" fill="#24121c" />
-        <rect x="0" y="520" width="800" height="180" fill="#2a1620" />
-        <rect x="0" y="548" width="800" height="152" fill="#1e0f17" />
-        <g className="zs-dash" fill="#f6c26b" opacity=".8">
-          {[0, 120, 240, 360, 480, 600, 720, 840].map(x => <rect key={x} x={x} y="612" width="70" height="6" rx="3" />)}
-        </g>
-        <g className="zs-car">
-          <g transform="translate(250 462)">
-            <path d="M0 96 L0 62 Q0 52 12 48 L50 40 L84 6 Q90 0 100 0 L214 0 Q226 0 232 8 L262 48 L300 54 Q312 56 312 68 L312 96 Z" fill="#14100c" />
-            <path d="M92 12 L56 44 L150 44 L150 12 Z M160 12 L160 44 L244 44 L222 12 Z" fill="#6a4a36" opacity=".85" />
-            <rect x="96" y="-8" width="116" height="5" rx="2.5" fill="#3a2e24" />
-            <rect x="290" y="62" width="22" height="9" rx="4" fill="#ffe2a0" />
-            <rect x="0" y="66" width="10" height="9" rx="4" fill="#d6402c" />
-            <rect x="120" y="70" width="56" height="12" rx="3" fill="#E08E0B" />
-            <text x="148" y="80" textAnchor="middle" style={{ fill: "#1b120a", font: "700 9px sans-serif" }}>ZURI</text>
-            {[66, 246].map(x => (
-              <g key={x} transform={`translate(${x} 98)`}>
-                <circle r="25" fill="#0a0806" />
-                <circle className="zs-wheel" r="14" fill="#6b5c4b" />
-                <g className="zs-wheel" stroke="#b9a68b" strokeWidth="3"><path d="M-12 0H12M0 -12V12" /></g>
-              </g>
-            ))}
-          </g>
-          <g transform="translate(236 600)">
-            <circle className="zs-dust" r="10" fill="#d9b684" />
-            <circle className="zs-dust" r="8" fill="#d9b684" style={{ animationDelay: ".5s" }} />
-            <circle className="zs-dust" r="12" fill="#d9b684" style={{ animationDelay: "1s" }} />
-          </g>
-        </g>
-      </svg>
-      {/* A real video, when one is added at public/videos/login-loop.mp4, fades
-          in over the drawn scene. If the file is missing, fails to load, or
-          the person has asked for reduced motion, the drawn scene stays. */}
-      <LoginVideo />
-      <div className="absolute inset-0 bg-gradient-to-t from-[#120d08]/40 via-transparent to-[#120d08]/20" />
-    </div>
-  );
-}
-
-function LoginVideo() {
-  const ref = useRef<HTMLVideoElement>(null);
-  const [ready, setReady] = useState(false);
-  const [still, setStill] = useState(false);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    // Someone who has turned animations off gets a still frame instead.
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) { setStill(true); return; }
-    const v = ref.current;
-    if (!v) return;
-    // On a fast connection the video can finish loading before React attaches
-    // its listeners, so check its state directly as well as listening.
-    const show = () => setReady(true);
-    if (v.readyState >= 2) show();
-    v.addEventListener("loadeddata", show);
-    v.addEventListener("canplay", show);
-    v.play().catch(() => { /* autoplay refused: the poster stays */ });
-    return () => { v.removeEventListener("loadeddata", show); v.removeEventListener("canplay", show); };
-  }, []);
-
-  if (failed) return null;
-  if (still) {
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src="/videos/login-loop.jpg" alt="" className="absolute inset-0 h-full w-full object-cover" onError={() => setFailed(true)} />;
-  }
-  return (
-    <video
-      ref={ref}
-      className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-1000 ${ready ? "opacity-100" : "opacity-0"}`}
-      autoPlay muted loop playsInline preload="auto" poster="/videos/login-loop.jpg"
-    >
-      <source src="/videos/login-loop.webm" type="video/webm" />
-      <source src="/videos/login-loop.mp4" type="video/mp4" onError={() => setFailed(true)} />
-    </video>
-  );
-}
+const PALM = (
+  <>
+    <path d="M100 420c4-90 2-170-8-250l6-1c11 80 13 160 9 251h-7Z" />
+    <path d="M96 172c-30-34-66-44-96-34 28-2 60 10 90 38l6-4Zm2-2c-4-46-30-78-62-92 24 18 44 50 56 94l6-2Zm2 0c18-40 50-62 86-64-30 10-58 34-80 68l-6-4Zm-2 4c40-18 78-14 104 6-30-12-66-10-100 0l-4-6Zm-6 2c-38 2-70 22-86 52 20-24 50-42 88-46l-2-6Z" />
+  </>
+);
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
-  const [error, setError] = useState("");
+  const [remember, setRemember] = useState(false);
+  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [msg, setMsg] = useState<{ text: string; kind: "err" | "info" } | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(KEY);
+      if (saved) { setEmail(saved); setRemember(true); }
+    } catch { /* storage blocked */ }
+  }, []);
+
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setError("");
-
-    const result = await signIn("credentials", { email, password, redirect: false });
-
-    if (result?.error) {
-      setError("Invalid email or password.");
-      setLoading(false);
+    setMsg(null);
+    const em = email.trim();
+    const next: { email?: string; password?: string } = {};
+    if (!em) next.email = "Please enter your email address.";
+    else if (!EMAIL_RE.test(em)) next.email = "Please enter a valid email address.";
+    if (!password) next.password = "Please enter your password.";
+    setErrors(next);
+    if (next.email || next.password) {
+      document.getElementById(next.email ? "email" : "password")?.focus();
       return;
     }
 
-    window.location.href = "/admin";
+    try {
+      if (remember) localStorage.setItem(KEY, em); else localStorage.removeItem(KEY);
+    } catch { /* storage blocked */ }
+
+    setLoading(true);
+    try {
+      const result = await signIn("credentials", { email: em, password, redirect: false });
+      if (result?.error) {
+        setMsg({ text: "Invalid email or password.", kind: "err" });
+        setLoading(false);
+        return;
+      }
+      window.location.href = "/admin";
+    } catch {
+      setMsg({ text: "Could not sign in. Check your connection and try again.", kind: "err" });
+      setLoading(false);
+    }
   };
 
-  const field =
-    "w-full h-14 rounded-2xl border border-black/10 bg-white/80 pl-12 pr-12 text-[15px] text-ink placeholder-black/35 outline-none transition focus:border-[#E08E0B] focus:ring-4 focus:ring-[#E08E0B]/15";
-
   return (
-    <div className="zl min-h-screen grid lg:grid-cols-[1.12fr_1fr] bg-[#f7f2ea]">
-      <style>{`
-        @keyframes zl-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
-        @keyframes zl-drift { from { transform: scale(1.04); } to { transform: scale(1.12) translateX(-1.5%); } }
-        .zl-rise { animation: zl-rise .7s cubic-bezier(.2,.7,.2,1) both; }
-        .zl-drift { animation: zl-drift 24s ease-in-out infinite alternate; }
-        @media (prefers-reduced-motion: reduce) { .zl-rise, .zl-drift { animation: none; } }
-      `}</style>
-
-      {/* Brand panel */}
-      <div className="relative h-60 sm:h-72 lg:h-auto lg:min-h-screen">
-        <div
-          className="hidden lg:block absolute inset-y-0 left-0 -right-3"
-          style={{ background: `linear-gradient(180deg, #F6B53A, ${AMBER} 55%, #B96A00)`, borderRadius: "0 38% 38% 0 / 0 50% 50% 0" }}
-        />
-        <div className="relative h-full overflow-hidden lg:[border-radius:0_38%_38%_0/0_50%_50%_0]">
-          <LoginScene />
-
-          <div className="relative h-full flex flex-col justify-between p-6 sm:p-10 lg:p-14">
-            <div className="flex items-center gap-3">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/images/zuri-emblem.png" alt="Zuri Tours" className="h-11 w-11 sm:h-14 sm:w-14 rounded-full object-cover ring-2 ring-white/25" />
-              <div className="leading-tight">
-                <div className="font-display text-xl sm:text-2xl text-white">Zuri Tours</div>
-                <div className="text-[0.68rem] tracking-[0.28em] uppercase text-white/70">& Car Hire</div>
-              </div>
+    <main className="zl page">
+      {/* ===== LEFT: HERO ===== */}
+      <section className="hero" aria-label="Zuri Tours and Car Hire">
+        <div className="hero-media" role="img" aria-label="Zuri Tours vehicles at sunset by the ocean in Dar es Salaam" />
+        <div className="hero-inner">
+          <div className="brand">
+            <div className="brand-logo" role="img" aria-label="Zuri Tours logo" />
+            <div>
+              <div className="brand-name">Zuri Tours</div>
+              <div className="brand-sub">&amp; Car Hire</div>
             </div>
+          </div>
 
-            <div className="hidden lg:block max-w-lg">
-              <h1 className="font-display text-5xl xl:text-6xl text-white leading-[1.05]">
-                <span style={{ color: AMBER }}>Zuri</span> Business OS
-              </h1>
-              <div className="mt-5 h-px w-24" style={{ background: AMBER }} />
-              <p className="mt-5 text-lg text-white/80 tracking-wide">Manage. Operate. Grow.</p>
-            </div>
+          <div className="headline">
+            <h1><span>Zuri</span> Business OS</h1>
+            <p className="tagline">Manage. Operate. Grow.</p>
+            <div className="rule" />
+            <p className="quote">Your trusted transport partner<br />in Tanzania.</p>
+          </div>
 
-            <div className="hidden lg:grid grid-cols-3 gap-6 border-t border-white/15 pt-6">
-              {FEATURES.map((f) => (
-                <div key={f.title} className="flex items-start gap-3">
-                  <Icon d={f.icon} className="w-7 h-7 shrink-0" />
-                  <div>
-                    <div className="text-sm font-medium text-white">{f.title}</div>
-                    <div className="text-xs text-white/60 mt-0.5">{f.sub}</div>
-                  </div>
-                </div>
-              ))}
+          <div className="features">
+            <div className="feature">
+              <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M24 4 7 10v12c0 11 7.3 18.8 17 22 9.7-3.2 17-11 17-22V10L24 4Z" /><path d="m16.5 24 5.3 5.3L32 19" />
+              </svg>
+              <div><b>Secure Access</b><small>Your data, our priority</small></div>
             </div>
-            <style>{`.zl .grid svg { color: ${AMBER}; }`}</style>
+            <div className="feature">
+              <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M6 33a18 18 0 1 1 36 0" /><path d="m24 33 9-10" /><circle cx="24" cy="33" r="2.6" fill="currentColor" /><path d="M11 33h3M34 33h3M24 15v3M13.5 21.5l2 2M34.5 21.5l-2 2" />
+              </svg>
+              <div><b>Better Operations</b><small>Drive efficiency</small></div>
+            </div>
+            <div className="feature">
+              <svg viewBox="0 0 48 48" fill="currentColor" aria-hidden="true">
+                <path d="M3 18.5 10.5 11l6.2 6.2-7.5 7.5L3 18.5Zm42 0L37.5 11l-6.2 6.2 7.5 7.5 6.2-6.2Z" />
+                <path d="M18.4 16.3c2.6-1.9 5.6-2.3 8.2-1.3l3.2 1.2 7.3 7.3-2.5 2.5L25 16.4c-1.4-.6-2.8-.6-4.4.4l-4.5 3.2c-1 .7-1 2.1-.1 2.9.8.7 1.9.7 2.7.1l3.4-2.4 13.6 13.6c1 1 1 2.6 0 3.6s-2.6 1-3.6 0l-5-5 -1.4 1.4 4.7 4.7c1 1 1 2.6 0 3.6s-2.6 1-3.6 0l-4.7-4.7-1.4 1.4 3.8 3.8c1 1 1 2.6 0 3.6s-2.6 1-3.6 0l-3.8-3.8-1.4 1.4 2.4 2.4c.9.9.9 2.4 0 3.3-.9.9-2.4.9-3.3 0L11.7 31.9l-2.4-2.4 4.8-4.8 0 0c-1.4-2.2-1-5.1 1.1-6.6l3.2-1.8Z" />
+              </svg>
+              <div><b>Stronger Service</b><small>For our clients</small></div>
+            </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Sign-in */}
-      <div className="relative flex items-center justify-center px-5 py-10 lg:py-0 -mt-10 lg:mt-0">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_50%_at_80%_10%,rgba(224,142,11,0.12),transparent),radial-gradient(50%_40%_at_10%_100%,rgba(224,142,11,0.08),transparent)]" />
+      {/* ===== RIGHT: LOGIN ===== */}
+      <section className="side">
+        <div className="palms" aria-hidden="true">
+          <svg viewBox="0 0 200 420" style={{ right: -40, top: -20, width: 260, transform: "scaleX(-1)" }}>{PALM}</svg>
+          <svg viewBox="0 0 200 420" style={{ right: 30, bottom: -60, width: 300, opacity: 0.6 }}>{PALM}</svg>
+          <svg viewBox="0 0 200 420" style={{ right: 150, bottom: -90, width: 200, opacity: 0.45, transform: "scaleX(-1)" }}>{PALM}</svg>
+        </div>
 
-        <div className="zl-rise relative w-full max-w-[26rem] rounded-[1.75rem] bg-white/90 backdrop-blur-xl border border-white shadow-[0_30px_80px_-20px_rgba(60,35,5,0.28)] px-7 sm:px-9 py-9">
-          <div className="text-center">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/images/zuri-emblem.png" alt="Zuri Tours" className="mx-auto h-20 w-20 rounded-full object-cover shadow-lg shadow-black/10" />
-            <h2 className="font-display text-3xl text-ink mt-5">Welcome back</h2>
-            <p className="text-sm text-black/50 mt-1.5">Sign in to continue</p>
-          </div>
+        <div className="card">
+          <div className="card-logo" role="img" aria-label="Zuri Tours logo" />
+          <h2 className="card-title">Zuri Tours &amp; Car Hire</h2>
+          <div className="card-title-rule" />
+          <p className="card-sub">Management System</p>
 
-          <form onSubmit={handleLogin} className="mt-8 space-y-4">
-            <div className="relative">
-              <Icon d={ICONS.mail} className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-black/35" />
-              <input
-                type="email"
-                required
-                autoComplete="username"
-                aria-label="Email address"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Email address"
-                className={field}
-              />
-            </div>
+          <h3 className="welcome">Welcome Back!</h3>
+          <p className="welcome-sub">Sign in to continue to your dashboard</p>
 
-            <div className="relative">
-              <Icon d={ICONS.lock} className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-black/35" />
-              <input
-                type={show ? "text" : "password"}
-                required
-                autoComplete="current-password"
-                aria-label="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Password"
-                className={field}
-              />
-              <button
-                type="button"
-                onClick={() => setShow((s) => !s)}
-                aria-label={show ? "Hide password" : "Show password"}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-lg text-black/40 hover:text-black/70 transition"
-              >
-                <Icon d={show ? ICONS.eyeOff : ICONS.eye} />
-              </button>
-            </div>
-
-            {error && (
-              <div role="alert" className="rounded-xl border border-red-200 bg-red-50 text-red-700 text-sm px-4 py-3">
-                {error}
+          <form onSubmit={submit} noValidate>
+            <div className={`field${errors.email ? " invalid" : ""}`}>
+              <div className="input-wrap">
+                <svg className="lead" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="7.5" r="4.5" /><path d="M3 21c.6-4.6 4.2-7.5 9-7.5s8.4 2.9 9 7.5H3Z" /></svg>
+                <input id="email" type="email" placeholder="Email Address" autoComplete="username" aria-label="Email Address"
+                  aria-invalid={!!errors.email} aria-describedby="emailError"
+                  value={email} onChange={e => { setEmail(e.target.value); setErrors(x => ({ ...x, email: undefined })); setMsg(null); }} />
               </div>
-            )}
+              <p className="error" id="emailError" role="alert">{errors.email}</p>
+            </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="group w-full h-14 rounded-2xl text-white font-medium tracking-wide flex items-center justify-center gap-2.5 shadow-[0_12px_30px_-10px_rgba(224,142,11,0.7)] transition hover:brightness-105 active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed"
-              style={{ background: `linear-gradient(180deg, #F0A21C, ${AMBER})` }}
-            >
+            <div className={`field${errors.password ? " invalid" : ""}`}>
+              <div className="input-wrap">
+                <svg className="lead" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17 10V7.5a5 5 0 0 0-10 0V10H5.5A1.5 1.5 0 0 0 4 11.5v9A1.5 1.5 0 0 0 5.5 22h13a1.5 1.5 0 0 0 1.5-1.5v-9a1.5 1.5 0 0 0-1.5-1.5H17Zm-7.5-2.5a2.5 2.5 0 0 1 5 0V10h-5V7.5Z" /></svg>
+                <input id="password" type={show ? "text" : "password"} placeholder="Password" autoComplete="current-password" aria-label="Password"
+                  aria-invalid={!!errors.password} aria-describedby="passwordError"
+                  value={password} onChange={e => { setPassword(e.target.value); setErrors(x => ({ ...x, password: undefined })); setMsg(null); }} />
+                <button type="button" className="eye" onClick={() => setShow(s => !s)} aria-label={show ? "Hide password" : "Show password"} aria-pressed={show}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" />{!show && <path d="M3 3l18 18" />}
+                  </svg>
+                </button>
+              </div>
+              <p className="error" id="passwordError" role="alert">{errors.password}</p>
+            </div>
+
+            <div className="row">
+              <label className="remember"><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} /> Remember Me</label>
+              <a href="#" className="forgot" onClick={e => { e.preventDefault(); setMsg({ text: "Ask the owner to reset your password from the Users page.", kind: "info" }); }}>Forgot Password?</a>
+            </div>
+
+            <button type="submit" className="submit" disabled={loading}>
               {loading ? (
-                <>
-                  <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-                  Signing in
-                </>
+                <><span className="spinner" aria-hidden="true" /><span>Signing in…</span></>
               ) : (
                 <>
-                  Sign in
-                  <Icon d={ICONS.arrow} className="w-5 h-5 transition-transform group-hover:translate-x-0.5" />
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M14 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" /><path d="M3 12h12" /><path d="m11 8 4 4-4 4" />
+                  </svg>
+                  <span>Sign In</span>
                 </>
               )}
             </button>
+            {msg && <p className={`form-msg show ${msg.kind}`} role="status">{msg.text}</p>}
           </form>
 
-          <div className="mt-8 flex items-center gap-3 text-[0.7rem] tracking-[0.22em] uppercase text-black/35">
-            <span className="h-px flex-1 bg-black/10" />
-            Zuri Tours &amp; Car Hire
-            <span className="h-px flex-1 bg-black/10" />
+          <div className="card-foot">
+            <div className="line">Zuri Tours &amp; Car Hire</div>
+            <div className="motto">— Travel Further. Together. —</div>
           </div>
         </div>
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }
