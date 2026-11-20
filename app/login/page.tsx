@@ -89,21 +89,20 @@ export default function LoginPage() {
 
           <div className="features">
             <div className="feature">
-              <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M24 4 7 10v12c0 11 7.3 18.8 17 22 9.7-3.2 17-11 17-22V10L24 4Z" /><path d="m16.5 24 5.3 5.3L32 19" />
+              <svg className="ico-shield" viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path className="outline" pathLength={1} d="M24 4 7 10v12c0 11 7.3 18.8 17 22 9.7-3.2 17-11 17-22V10L24 4Z" /><path className="tick" pathLength={1} d="m16.5 24 5.3 5.3L32 19" />
               </svg>
               <div><b>Secure Access</b><small>Your data, our priority</small></div>
             </div>
             <div className="feature">
-              <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M6 33a18 18 0 1 1 36 0" /><path d="m24 33 9-10" /><circle cx="24" cy="33" r="2.6" fill="currentColor" /><path d="M11 33h3M34 33h3M24 15v3M13.5 21.5l2 2M34.5 21.5l-2 2" />
+              <svg className="ico-gauge" viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M6 33a18 18 0 1 1 36 0" /><path d="M11 33h3M34 33h3M24 15v3M13.5 21.5l2 2M34.5 21.5l-2 2" /><path className="needle" d="M24 33V20" /><circle cx="24" cy="33" r="2.6" fill="currentColor" />
               </svg>
               <div><b>Better Operations</b><small>Drive efficiency</small></div>
             </div>
             <div className="feature">
-              <svg viewBox="0 0 48 48" fill="currentColor" aria-hidden="true">
-                <path d="M3 18.5 10.5 11l6.2 6.2-7.5 7.5L3 18.5Zm42 0L37.5 11l-6.2 6.2 7.5 7.5 6.2-6.2Z" />
-                <path d="M18.4 16.3c2.6-1.9 5.6-2.3 8.2-1.3l3.2 1.2 7.3 7.3-2.5 2.5L25 16.4c-1.4-.6-2.8-.6-4.4.4l-4.5 3.2c-1 .7-1 2.1-.1 2.9.8.7 1.9.7 2.7.1l3.4-2.4 13.6 13.6c1 1 1 2.6 0 3.6s-2.6 1-3.6 0l-5-5 -1.4 1.4 4.7 4.7c1 1 1 2.6 0 3.6s-2.6 1-3.6 0l-4.7-4.7-1.4 1.4 3.8 3.8c1 1 1 2.6 0 3.6s-2.6 1-3.6 0l-3.8-3.8-1.4 1.4 2.4 2.4c.9.9.9 2.4 0 3.3-.9.9-2.4.9-3.3 0L11.7 31.9l-2.4-2.4 4.8-4.8 0 0c-1.4-2.2-1-5.1 1.1-6.6l3.2-1.8Z" />
+              <svg className="ico-hands" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="m11 17 2 2a1 1 0 1 0 3-3" /><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4" /><path d="m21 3 1 11h-2" /><path d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3" /><path d="M3 4h8" />
               </svg>
               <div><b>Stronger Service</b><small>For our clients</small></div>
             </div>
