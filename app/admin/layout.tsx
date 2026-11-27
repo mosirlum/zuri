@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import Link from "next/link";
+import { Helper } from "@/components/Helper";
 import {
   LayoutDashboard, Car, Users, CalendarCheck,
   ShieldAlert, DollarSign, BarChart3, MessageSquare,
@@ -174,6 +175,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </header>
         <main className="flex-1 p-6 lg:p-8 overflow-auto"><div key={pathname} className="z-page">{children}</div></main>
       </div>
+      <Helper pages={filteredNav.map((i) => i.href)} name={userName.split(" ")[0] ?? ""} isBoss={role === "super_admin"} />
     </div>
   );
 }
